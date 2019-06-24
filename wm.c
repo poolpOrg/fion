@@ -41,6 +41,34 @@ wm_run_terminal(struct wm *wm, xcb_window_t xcb_root)
 }
 
 void
+wm_workspace_create(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("workspace_create");
+	layout_workspace_create(wm, xcb_root);
+}
+
+void
+wm_workspace_destroy(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("workspace_destroy");
+	layout_workspace_destroy(wm, xcb_root);
+}
+
+void
+wm_workspace_next(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("workspace_next");
+	layout_workspace_next(wm, xcb_root);
+}
+
+void
+wm_workspace_prev(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("workspace_prev");
+	layout_workspace_prev(wm, xcb_root);
+}
+
+void
 wm_tile_split_h(struct wm *wm, xcb_window_t xcb_root)
 {
 	log_debug("tile_split_h");

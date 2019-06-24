@@ -31,6 +31,11 @@ static struct key	keys[] = {
 
 	{ XCB_MOD_MASK_3,	XK_t,		wm_run_terminal },
 
+	{ XCB_MOD_MASK_3,	XK_w,		wm_workspace_create },
+	{ XCB_MOD_MASK_3,	XK_d,		wm_workspace_destroy },
+	{ XCB_MOD_MASK_3,	XK_n,		wm_workspace_next },
+	{ XCB_MOD_MASK_3,	XK_p,		wm_workspace_prev },
+
 	{ XCB_MOD_MASK_3,	XK_h,		wm_tile_split_h },
 	{ XCB_MOD_MASK_3,	XK_v,		wm_tile_split_v },
 };

@@ -66,6 +66,8 @@ struct wm {
 };
 
 struct window {
+	uint64_t		id;
+
         enum window_type        type;
 
         int                     x;
@@ -107,7 +109,7 @@ void		 layout_window_remove(struct wm *wm, xcb_window_t xcb_window);
 void		 layout_workspace_create(struct wm *wm, xcb_window_t xcb_root);
 void		 layout_workspace_next(struct wm *wm, xcb_window_t xcb_root);
 void		 layout_workspace_prev(struct wm *wm, xcb_window_t xcb_root);
-void		 layout_workspace_delete(struct wm *wm, xcb_window_t xcb_root);
+void		 layout_workspace_destroy(struct wm *wm, xcb_window_t xcb_root);
 
 void		 layout_screen_register(struct wm *wm, xcb_screen_t *xcb_screen);
 void		 layout_screen_render(struct wm *wm);
@@ -132,6 +134,7 @@ struct window	*window_create_workspace(struct wm *wm, struct window *window);
 struct window	*window_create_parent_tile(struct wm *wm, struct window *window);
 struct window	*window_create_tile(struct wm *wm, struct window *window);
 struct window	*window_create_frame(struct wm *wm, struct window *window);
+struct window	*window_create_client(struct wm *wm, struct window *window);
 
 void		 window_map(struct wm *wm, struct window *window);
 void		 window_unmap(struct wm *wm, struct window *window);
@@ -143,9 +146,9 @@ void		 window_border_width(struct wm *wm, struct window *window, uint32_t width)
 
 /* wm.c */
 void		 wm_workspace_create(struct wm *wm, xcb_window_t xcb_root);
+void		 wm_workspace_destroy(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_workspace_next(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_workspace_prev(struct wm *wm, xcb_window_t xcb_root);
-void		 wm_workspace_delete(struct wm *wm, xcb_window_t xcb_root);
 
 void		 wm_run_terminal(struct wm *wm, xcb_window_t xcb_root);
 

@@ -15,6 +15,7 @@
  */
 
 #include <err.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,9 +30,11 @@ static struct window *find_ancestor(struct wm *wm, struct window *node, enum win
 static struct window *find_screen(struct wm *wm, xcb_window_t xcb_root);
 static struct window *find_workarea(struct wm *wm, struct window *screen);
 static struct window *find_workspace(struct wm *wm, struct window *screen);
+static struct window *find_workspace_next(struct wm *wm, struct window *workspace);
+static struct window *find_workspace_prev(struct wm *wm, struct window *workspace);
 static struct window *find_active_tile(struct wm *wm, xcb_screen_t *xcb_screen);
-static struct window *find_next_tile(struct wm *wm, struct window *tile);
-static struct window *find_prev_tile(struct wm *wm, struct window *tile);
+static struct window *find_tile_next(struct wm *wm, struct window *tile);
+static struct window *find_tile_prev(struct wm *wm, struct window *tile);
 static struct window *find_active_frame(struct wm *wm, struct window *tile);
 
 static struct window *create_screen(struct wm *wm, xcb_screen_t *xcb_screen);
@@ -42,7 +45,6 @@ static struct window *create_tile(struct wm *wm, struct window *parent);
 static struct window *create_tile_fork(struct wm *wm, struct window *tile);
 static struct window *create_frame(struct wm *wm, struct window *tile);
 static struct window *create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window);
-
 
 static void prepare_screen(struct wm *wm, struct window *screen);
 static void prepare_workspace(struct wm *wm, struct window *workspace);
@@ -141,19 +143,56 @@ find_workspace(struct wm *wm, struct window *screen)
 }
 
 static struct window *
+find_workspace_next(struct wm *wm, struct window *workspace)
+{
+	struct window *workarea = find_ancestor(wm, workspace, WT_WORKAREA);
+	struct window *node;
+	void *iter;
+
+	iter = NULL;
+	if (tree_iterfrom(&workarea->children, &iter, workspace->id + 1, NULL, (void **)&node))
+		return node;
+	while (tree_iter(&workarea->children, &iter, NULL, (void **)&node))
+		return node;
+	return workspace;
+}
+
+static struct window *
+find_workspace_prev(struct wm *wm, struct window *workspace)
+{
+	struct window *workarea = find_ancestor(wm, workspace, WT_WORKAREA);
+	struct window *node;
+	struct window *prev;
+	void *iter;
+
+	prev = iter = NULL;
+	while (tree_iter(&workarea->children, &iter, NULL, (void **)&node)) {
+		if (node->id == workspace->id) {
+			if (prev)
+				return prev;
+			break;
+		}
+		prev = node;
+	}
+	while (tree_iter(&workarea->children, &iter, NULL, (void **)&node))
+		;
+	return node;
+}
+
+static struct window *
 find_active_tile(struct wm *wm, xcb_screen_t *xcb_screen)
 {
 	return tree_xget(&wm->curr_tile, (uint64_t)xcb_screen);
 }
 
 static struct window *
-find_next_tile(struct wm *wm, struct window *tile)
+find_tile_next(struct wm *wm, struct window *tile)
 {
 	return tile;
 }
 
 static struct window *
-find_prev_tile(struct wm *wm, struct window *tile)
+find_tile_prev(struct wm *wm, struct window *tile)
 {
 	return tile;
 }
@@ -209,9 +248,10 @@ create_status(struct wm *wm, struct window *parent)
 
 	tree_init(&window->children);
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
 
-	return window_create_status(wm, window);
+	window = window_create_status(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -236,10 +276,11 @@ create_workarea(struct wm *wm, struct window *parent)
 	tree_init(&window->children);
 
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
 	tree_set(&wm->curr_workarea, (uint64_t)parent->xcb_screen, window);
 
-	return window_create_workarea(wm, window);
+	window = window_create_workarea(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -261,11 +302,12 @@ create_workspace(struct wm *wm, struct window *parent)
 
 	tree_init(&window->children);
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
 
 	tree_set(&wm->curr_workspace, (uint64_t)parent->xcb_screen, window);
 
-	return window_create_workspace(wm, window);
+	window = window_create_workspace(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -288,9 +330,10 @@ create_tile_fork(struct wm *wm, struct window *tile)
 	
 	tree_init(&window->children);
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
 
-	return window_create_tile(wm, window);
+	window = window_create_tile(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -312,11 +355,11 @@ create_tile(struct wm *wm, struct window *parent)
 	
 	tree_init(&window->children);
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
-
 	tree_set(&wm->curr_tile, (uint64_t)parent->xcb_screen, window);
 
-	return window_create_tile(wm, window);
+	window = window_create_tile(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -338,10 +381,12 @@ create_frame(struct wm *wm, struct window *parent)
 
 	tree_init(&window->children);
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_xset(&parent->children, window->xcb_window, window);
+
 	tree_set(&wm->curr_frame, parent->xcb_window, window);
 
-	return window_create_frame(wm, window);
+	window = window_create_frame(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 static struct window *
@@ -362,9 +407,10 @@ create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window)
 
 	tree_init(&window->children);
 	tree_set(&wm->windows, window->xcb_window, window);
-	tree_set(&parent->children, window->xcb_window, window);
 
-	return window_create_frame(wm, window);
+	window = window_create_client(wm, window);
+	tree_xset(&parent->children, window->id, window);
+	return window;
 }
 
 
@@ -596,7 +642,7 @@ layout_tile_next(struct wm *wm, xcb_window_t xcb_root)
 {
 	struct window *window = xfind_window(wm, xcb_root);
 	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *next = find_next_tile(wm, tile);
+	struct window *next = find_tile_next(wm, tile);
 
 	if (next == tile)
 		return;
@@ -607,7 +653,7 @@ layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 {
 	struct window *window = xfind_window(wm, xcb_root);
 	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *prev = find_prev_tile(wm, tile);
+	struct window *prev = find_tile_prev(wm, tile);
 	
 	if (prev == tile)
 		return;
@@ -622,10 +668,6 @@ layout_workspace_create(struct wm *wm, xcb_window_t xcb_root)
 	struct window *workspace = find_workspace(wm, screen);
 	struct window *window;
 
-	screen = find_screen(wm, xcb_root);
-	workarea = find_workarea(wm, screen);
-	workspace = find_workspace(wm, screen);
-
 	window = create_workspace(wm, workarea);
 	prepare_workspace(wm, window);
 	window_map(wm, window);
@@ -633,7 +675,7 @@ layout_workspace_create(struct wm *wm, xcb_window_t xcb_root)
 }
 
 void
-layout_workspace_delete(struct wm *wm, xcb_window_t xcb_root)
+layout_workspace_destroy(struct wm *wm, xcb_window_t xcb_root)
 {
 	struct window *screen = find_screen(wm, xcb_root);
 	struct window *workarea = find_workarea(wm, screen);
@@ -653,4 +695,34 @@ layout_workspace_delete(struct wm *wm, xcb_window_t xcb_root)
 
 	window_unmap(wm, temp);	
 	warnx("#2 need to recursively kill all children");
+}
+
+void
+layout_workspace_next(struct wm *wm, xcb_window_t xcb_root)
+{
+	struct window *screen = find_screen(wm, xcb_root);
+	struct window *workspace = find_workspace(wm, screen);
+	struct window *next = find_workspace_next(wm, workspace);
+
+	if (next == workspace)
+		return;
+
+	window_map(wm, next);
+	tree_set(&wm->curr_workspace, (uint64_t)screen->xcb_screen, next);
+	window_unmap(wm, workspace);
+}
+
+void
+layout_workspace_prev(struct wm *wm, xcb_window_t xcb_root)
+{
+	struct window *screen = find_screen(wm, xcb_root);
+	struct window *workspace = find_workspace(wm, screen);
+	struct window *prev = find_workspace_prev(wm, workspace);
+
+	if (prev == workspace)
+		return;
+
+	window_map(wm, prev);
+	tree_set(&wm->curr_workspace, (uint64_t)screen->xcb_screen, prev);
+	window_unmap(wm, workspace);
 }
