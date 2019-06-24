@@ -683,10 +683,10 @@ layout_workspace_destroy(struct wm *wm, xcb_window_t xcb_root)
 	struct window *temp;
 	struct window *next;
 
-	temp = tree_xpop(&workarea->children, workspace->xcb_window);
-	if (tree_root(&workarea->children, NULL, (void **)&next) == 0) {
+	temp = tree_xpop(&workarea->children, workspace->id);
+	if (! tree_root(&workarea->children, NULL, (void **)&next)) {
 		/* removing last workspace is not allowed */
-		tree_xset(&workarea->children, workspace->xcb_window, temp);
+		tree_xset(&workarea->children, workspace->id, temp);
 		return;
 	}
 
