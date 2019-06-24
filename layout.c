@@ -680,21 +680,18 @@ layout_workspace_destroy(struct wm *wm, xcb_window_t xcb_root)
 	struct window *screen = find_screen(wm, xcb_root);
 	struct window *workarea = find_workarea(wm, screen);
 	struct window *workspace = find_workspace(wm, screen);
-	struct window *temp;
 	struct window *next;
 
-	temp = tree_xpop(&workarea->children, workspace->id);
+	tree_xpop(&workarea->children, workspace->id);
 	if (! tree_root(&workarea->children, NULL, (void **)&next)) {
 		/* removing last workspace is not allowed */
-		tree_xset(&workarea->children, workspace->id, temp);
+		tree_xset(&workarea->children, workspace->id, workspace);
 		return;
 	}
 
 	window_map(wm, next);
-	tree_set(&wm->curr_workspace, (uint64_t)screen->xcb_screen, next);
-
-	window_unmap(wm, temp);	
-	warnx("#2 need to recursively kill all children");
+	tree_set(&wm->curr_workspace, (uint64_t)screen->xcb_screen, next);	
+	window_unmap(wm, workspace);	
 }
 
 void
