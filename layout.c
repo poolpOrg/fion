@@ -32,6 +32,7 @@ static struct window *find_workspace(struct wm *wm, struct window *screen);
 static struct window *find_active_tile(struct wm *wm, xcb_screen_t *xcb_screen);
 static struct window *find_next_tile(struct wm *wm, struct window *tile);
 static struct window *find_prev_tile(struct wm *wm, struct window *tile);
+static struct window *find_active_frame(struct wm *wm, struct window *tile);
 
 static struct window *create_screen(struct wm *wm, xcb_screen_t *xcb_screen);
 static struct window *create_status(struct wm *wm, struct window *screen);
@@ -155,6 +156,12 @@ static struct window *
 find_prev_tile(struct wm *wm, struct window *tile)
 {
 	return tile;
+}
+
+static struct window *
+find_active_frame(struct wm *wm, struct window *tile)
+{
+	return tree_xget(&wm->curr_frame, tile->xcb_window);
 }
 
 
@@ -350,7 +357,6 @@ create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window)
 	window->xcb_parent = parent->xcb_window;
 	window->xcb_window = xcb_window;
 
-	window->border_width = BORDER_WIDTH;
 	window->width = parent->width - window->border_width * 2;
 	window->height = parent->height - window->border_width * 2;
 
@@ -512,7 +518,7 @@ layout_client_create(struct wm *wm, xcb_window_t xcb_root, xcb_window_t xcb_wind
 {
 	struct window *window = xfind_window(wm, xcb_root);
 	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *frame = tile;
+	struct window *frame = find_active_frame(wm, tile);
 	struct window *client;
 
 	client = create_client(wm, frame, xcb_window);
@@ -521,10 +527,6 @@ layout_client_create(struct wm *wm, xcb_window_t xcb_root, xcb_window_t xcb_wind
 		tree_xset(&wm->windows, client->xcb_window, client);
 
 	window_reparent(wm, frame, client);
-	client->x = frame->x;
-	client->y = frame->y;
-	client->height = frame->height - frame->border_width * 2;
-	client->width = frame->width - frame->border_width * 2;
 	window_resize(wm, client);
 
 	return (client);

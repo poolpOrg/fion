@@ -346,7 +346,11 @@ on_visibility_notify(struct wm *wm, xcb_visibility_notify_event_t *ev)
 static void
 on_create_notify(struct wm *wm, xcb_create_notify_event_t *ev)
 {
+	struct window *window;
+
 	log_debug("on_create_notify: %lld", (long long)ev->window);
+	if ((layout_window_get(wm, ev->window)) == NULL)
+		layout_client_create(wm, ev->parent, ev->window);
 }
 
 static void
