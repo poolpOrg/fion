@@ -81,3 +81,17 @@ wm_tile_split_v(struct wm *wm, xcb_window_t xcb_root)
 	log_debug("tile_split_v");
 	layout_tile_split(wm, xcb_root, VSPLIT);
 }
+
+void
+wm_tile_next(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("tile_next");
+	layout_tile_next(wm, xcb_root);
+}
+
+void
+wm_tile_prev(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("tile_prev");
+	layout_tile_prev(wm, xcb_root);
+}

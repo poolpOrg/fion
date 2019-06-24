@@ -26,10 +26,8 @@
 #define	BORDER_STATUS_WIDTH		1
 #define	BORDER_WORKAREA_WIDTH		1
 #define	BORDER_WORKSPACE_WIDTH		3
-#define	BORDER_TILEFORK_WIDTH		0
-#define	BORDER_TILE_WIDTH		0
-#define	BORDER_FRAME_WIDTH		1
-#define	BORDER_ACTIVE_FRAME_WIDTH	3
+#define	BORDER_TILEFORK_WIDTH		1
+#define	BORDER_TILE_WIDTH		1
 
 #define	STATUS_HEIGHT	15
 
@@ -43,7 +41,7 @@ enum window_type {
 	WT_STATUSBAR,
         WT_WORKAREA,
         WT_WORKSPACE,
-        WT_TILE_CONTAINER,
+        WT_TILEFORK,
         WT_TILE,
         WT_FRAME,
         WT_CLIENT,
@@ -54,7 +52,7 @@ struct wm {
 
 	struct tree windows;
 	struct tree screens;
-	struct tree frames;
+	struct tree tiles;
 
 	struct tree curr_workarea;
 	struct tree curr_workspace;
@@ -62,7 +60,6 @@ struct wm {
 	struct tree curr_frame;
 
 	struct window *active_screen;
-	struct window *active_frame;
 };
 
 struct window {

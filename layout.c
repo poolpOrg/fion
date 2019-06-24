@@ -35,7 +35,6 @@ static struct window *find_workspace_prev(struct wm *wm, struct window *workspac
 static struct window *find_active_tile(struct wm *wm, xcb_screen_t *xcb_screen);
 static struct window *find_tile_next(struct wm *wm, struct window *tile);
 static struct window *find_tile_prev(struct wm *wm, struct window *tile);
-static struct window *find_active_frame(struct wm *wm, struct window *tile);
 
 static struct window *create_screen(struct wm *wm, xcb_screen_t *xcb_screen);
 static struct window *create_status(struct wm *wm, struct window *screen);
@@ -43,7 +42,6 @@ static struct window *create_workarea(struct wm *wm, struct window *screen);
 static struct window *create_workspace(struct wm *wm, struct window *screen);
 static struct window *create_tile(struct wm *wm, struct window *parent);
 static struct window *create_tile_fork(struct wm *wm, struct window *tile);
-static struct window *create_frame(struct wm *wm, struct window *tile);
 static struct window *create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window);
 
 static void prepare_screen(struct wm *wm, struct window *screen);
@@ -54,8 +52,6 @@ static void prepare_tile_fork(struct wm *wm, struct window *tile, struct window 
 static struct window *tile_split(struct wm *wm, struct window *tile, enum split direction);
 static void tile_resize(struct wm *wm, struct window *tile);
 
-static void frame_set_active(struct wm *wm, struct window *frame);
-
 
 /* layout initialization */
 void
@@ -64,7 +60,7 @@ layout_init(struct wm *wm)
 	tree_init(&wm->windows);
 
 	tree_init(&wm->screens);
-	tree_init(&wm->frames);
+	tree_init(&wm->tiles);
 
 	tree_init(&wm->curr_workarea);
 	tree_init(&wm->curr_workspace);
@@ -188,19 +184,44 @@ find_active_tile(struct wm *wm, xcb_screen_t *xcb_screen)
 static struct window *
 find_tile_next(struct wm *wm, struct window *tile)
 {
+	struct window *node;
+	void *iter;
+
+	iter = NULL;
+	while (tree_iterfrom(&wm->tiles, &iter, tile->id + 1, NULL, (void **)&node)) {
+		if (node->xcb_screen == tile->xcb_screen)
+			return node;
+	}
+	while (tree_iter(&wm->tiles, &iter, NULL, (void **)&node))
+		if (node->xcb_screen == tile->xcb_screen)
+			return node;
 	return tile;
+
 }
 
 static struct window *
 find_tile_prev(struct wm *wm, struct window *tile)
 {
-	return tile;
-}
+	struct window *node;
+	struct window *prev;
+	struct window *last;
+	void *iter;
 
-static struct window *
-find_active_frame(struct wm *wm, struct window *tile)
-{
-	return tree_xget(&wm->curr_frame, tile->xcb_window);
+	prev = iter = NULL;
+	while (tree_iter(&wm->tiles, &iter, NULL, (void **)&node)) {
+		if (node->id == tile->id) {
+			if (prev)
+				return prev;
+			break;
+		}
+		if (node->xcb_screen == tile->xcb_screen)
+			prev = node;
+	}
+
+	while (tree_iter(&wm->tiles, &iter, NULL, (void **)&node))
+		if (node->xcb_screen == tile->xcb_screen)
+			last = node;
+	return last;
 }
 
 
@@ -319,7 +340,7 @@ create_tile_fork(struct wm *wm, struct window *tile)
 	if ((window = calloc(1, sizeof(*window))) == NULL)
 		return (NULL);
 
-	window->type = WT_TILE_CONTAINER;
+	window->type = WT_TILEFORK;
 	window->xcb_screen = tile->xcb_screen;
 	window->xcb_parent = tile->xcb_parent;
 	window->xcb_window = xcb_generate_id(wm->conn);
@@ -358,33 +379,7 @@ create_tile(struct wm *wm, struct window *parent)
 	tree_set(&wm->curr_tile, (uint64_t)parent->xcb_screen, window);
 
 	window = window_create_tile(wm, window);
-	tree_xset(&parent->children, window->id, window);
-	return window;
-}
-
-static struct window *
-create_frame(struct wm *wm, struct window *parent)
-{
-	struct window *window;
-
-	if ((window = calloc(1, sizeof(*window))) == NULL)
-		return (NULL);
-
-	window->type = WT_FRAME;
-	window->xcb_screen = parent->xcb_screen;
-	window->xcb_parent = parent->xcb_window;
-	window->xcb_window = xcb_generate_id(wm->conn);
-
-	window->border_width = BORDER_FRAME_WIDTH;
-	window->width = parent->width - window->border_width * 2;
-	window->height = parent->height - window->border_width * 2;
-
-	tree_init(&window->children);
-	tree_xset(&wm->windows, window->xcb_window, window);
-
-	tree_set(&wm->curr_frame, parent->xcb_window, window);
-
-	window = window_create_frame(wm, window);
+	tree_xset(&wm->tiles, window->id, window);
 	tree_xset(&parent->children, window->id, window);
 	return window;
 }
@@ -451,13 +446,6 @@ prepare_workspace(struct wm *wm, struct window *workspace)
 static void
 prepare_tile(struct wm *wm, struct window *tile)
 {
-	struct window *frame;
-
-	frame = create_frame(wm, tile);
-	window_map(wm, frame);
-
-	if (wm->active_frame == NULL)
-		frame_set_active(wm, frame);
 }
 
 static void
@@ -476,7 +464,13 @@ prepare_tile_fork(struct wm *wm, struct window *tile, struct window *parent)
 static void
 tile_set_active(struct wm *wm, struct window *tile)
 {
+	struct window *curr_tile = find_active_tile(wm, tile->xcb_screen);
+
+	window_border_color(wm, curr_tile, "#ffffff");
+
 	tree_set(&wm->curr_tile, (uint64_t)tile->xcb_screen, tile);
+	window_border_color(wm, tile, "#ff0000");
+
 }
 
 static struct window *
@@ -538,23 +532,9 @@ tile_resize(struct wm *wm, struct window *tile)
 		node->height = tile->height - node->border_width * 2;
 		node->width = tile->width - node->border_width * 2;
 		window_resize(wm, node);
-		if (node->type == WT_TILE_CONTAINER || node->type == WT_TILE || node->type == WT_FRAME)
+		if (node->type == WT_TILEFORK || node->type == WT_TILE || node->type == WT_FRAME)
 			tile_resize(wm, node);
 	}
-}
-
-
-/* frame */
-static void
-frame_set_active(struct wm *wm, struct window *frame)
-{
-	if (wm->active_frame) {
-		window_border_width(wm, wm->active_frame, 1);
-		window_border_color(wm, wm->active_frame, "#ffffff");
-	}
-	wm->active_frame = frame;
-	window_border_width(wm, wm->active_frame, 3);
-	window_border_color(wm, wm->active_frame, "#ff0000");
 }
 
 
@@ -564,15 +544,14 @@ layout_client_create(struct wm *wm, xcb_window_t xcb_root, xcb_window_t xcb_wind
 {
 	struct window *window = xfind_window(wm, xcb_root);
 	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *frame = find_active_frame(wm, tile);
 	struct window *client;
 
-	client = create_client(wm, frame, xcb_window);
+	client = create_client(wm, tile, xcb_window);
 	
 	if (find_window(wm, client->xcb_window) == NULL)
 		tree_xset(&wm->windows, client->xcb_window, client);
 
-	window_reparent(wm, frame, client);
+	window_reparent(wm, tile, client);
 	window_resize(wm, client);
 
 	return (client);
@@ -603,7 +582,7 @@ layout_window_remove(struct wm *wm, xcb_window_t xcb_window)
 	case WT_STATUSBAR:
 	case WT_WORKAREA:
 	case WT_WORKSPACE:
-	case WT_TILE_CONTAINER:
+	case WT_TILEFORK:
 	case WT_TILE:
 	case WT_FRAME:
 		err(1, "can't remove this window");
@@ -613,53 +592,6 @@ layout_window_remove(struct wm *wm, xcb_window_t xcb_window)
 }
 
 /* user commands */
-void
-layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
-{
-	struct window *window = xfind_window(wm, xcb_root);
-	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *sibling;
-
-	window_unmap(wm, tile);
-
-	sibling = tile_split(wm, tile, direction);
-
-	tile_set_active(wm, tile);
-	
-	window_resize(wm, sibling);
-	window_resize(wm, tile);
-
-	tile_resize(wm, sibling);
-	tile_resize(wm, tile);
-
-	window_map(wm, find_ancestor(wm, sibling, WT_TILE_CONTAINER));
-	window_map(wm, sibling);
-	window_map(wm, tile);
-}
-
-void
-layout_tile_next(struct wm *wm, xcb_window_t xcb_root)
-{
-	struct window *window = xfind_window(wm, xcb_root);
-	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *next = find_tile_next(wm, tile);
-
-	if (next == tile)
-		return;
-}
-
-void
-layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
-{
-	struct window *window = xfind_window(wm, xcb_root);
-	struct window *tile = find_active_tile(wm, window->xcb_screen);
-	struct window *prev = find_tile_prev(wm, tile);
-	
-	if (prev == tile)
-		return;
-}
-
-
 void
 layout_workspace_create(struct wm *wm, xcb_window_t xcb_root)
 {
@@ -722,4 +654,57 @@ layout_workspace_prev(struct wm *wm, xcb_window_t xcb_root)
 	window_map(wm, prev);
 	tree_set(&wm->curr_workspace, (uint64_t)screen->xcb_screen, prev);
 	window_unmap(wm, workspace);
+}
+
+void
+layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
+{
+	struct window *window = xfind_window(wm, xcb_root);
+	struct window *tile = find_active_tile(wm, window->xcb_screen);
+	struct window *sibling;
+
+	log_debug("splitting tile: %p", tile);
+
+	window_unmap(wm, tile);
+
+	sibling = tile_split(wm, tile, direction);
+
+	tile_set_active(wm, tile);
+
+	window_resize(wm, sibling);
+	window_resize(wm, tile);
+
+	tile_resize(wm, sibling);
+	tile_resize(wm, tile);
+
+	window_map(wm, find_ancestor(wm, sibling, WT_TILEFORK));
+	window_map(wm, sibling);
+	window_map(wm, tile);
+}
+
+void
+layout_tile_next(struct wm *wm, xcb_window_t xcb_root)
+{
+	struct window *window = xfind_window(wm, xcb_root);
+	struct window *tile = find_active_tile(wm, window->xcb_screen);
+	struct window *next = find_tile_next(wm, tile);
+
+	log_debug("next: %p -> %p", tile, next);
+	if (next == tile)
+		return;
+	log_debug("next is %p", next);
+	tile_set_active(wm, next);
+}
+
+void
+layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
+{
+	struct window *window = xfind_window(wm, xcb_root);
+	struct window *tile = find_active_tile(wm, window->xcb_screen);
+	struct window *prev = find_tile_prev(wm, tile);
+
+	log_debug("prev: %p -> %p", tile, prev);
+	if (prev == tile)
+		return;
+	tile_set_active(wm, prev);
 }
