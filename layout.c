@@ -282,6 +282,7 @@ find_tile_next(struct wm *wm, struct window *tile)
 	while (tree_iter(&wm->tiles_by_id, &iter, NULL, (void **)&node))
 		if (find_ancestor(wm, node, WT_WORKSPACE) == workspace)
 			return node;
+
 	return tile;
 
 }
@@ -812,8 +813,6 @@ layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
 {
 	struct window *tile = find_active_tile(wm, xcb_root);
 	struct window *sibling;
-
-	log_debug("splitting tile: %p", tile);
 
 	window_unmap(wm, tile);
 
