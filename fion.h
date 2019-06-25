@@ -25,9 +25,9 @@
 #define	BORDER_SCREEN_WIDTH		0
 #define	BORDER_STATUS_WIDTH		1
 #define	BORDER_WORKAREA_WIDTH		1
-#define	BORDER_WORKSPACE_WIDTH		3
+#define	BORDER_WORKSPACE_WIDTH		5
 #define	BORDER_TILEFORK_WIDTH		1
-#define	BORDER_TILE_WIDTH		1
+#define	BORDER_TILE_WIDTH		2
 
 #define	STATUS_HEIGHT	15
 
@@ -51,8 +51,12 @@ struct wm {
 	xcb_connection_t *conn;
 
 	struct tree windows;
-	struct tree screens;
-	struct tree tiles;
+
+	struct tree screens_by_id;
+	struct tree screens_by_window;
+
+	struct tree tiles_by_id;
+	struct tree tiles_by_window;
 
 	struct tree curr_workarea;
 	struct tree curr_workspace;
@@ -63,7 +67,8 @@ struct wm {
 };
 
 struct window {
-	uint64_t		id;
+	uint64_t		winid;
+	uint64_t		objid;
 
         enum window_type        type;
 
@@ -128,7 +133,7 @@ struct window	*window_create_screen(struct wm *wm, struct window *window);
 struct window	*window_create_status(struct wm *wm, struct window *window);
 struct window	*window_create_workarea(struct wm *wm, struct window *window);
 struct window	*window_create_workspace(struct wm *wm, struct window *window);
-struct window	*window_create_parent_tile(struct wm *wm, struct window *window);
+struct window	*window_create_tilefork(struct wm *wm, struct window *window);
 struct window	*window_create_tile(struct wm *wm, struct window *window);
 struct window	*window_create_frame(struct wm *wm, struct window *window);
 struct window	*window_create_client(struct wm *wm, struct window *window);

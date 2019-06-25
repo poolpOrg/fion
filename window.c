@@ -23,8 +23,6 @@
 #include "fion.h"
 #include "log.h"
 
-static uint64_t	window_id;
-
 static uint32_t
 rgb_pixel(const char *rgb)
 {
@@ -58,7 +56,6 @@ window_create_screen(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
         return window;
 }
 
@@ -82,7 +79,6 @@ window_create_status(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
         return window;
 }
 
@@ -106,7 +102,6 @@ window_create_workarea(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
         return window;
 }
 
@@ -130,7 +125,30 @@ window_create_workspace(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
+        return window;
+}
+
+struct window *
+window_create_tilefork(struct wm *wm, struct window *window)
+{
+        uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL;
+        uint32_t        values[2] = {
+		rgb_pixel("#000000"),
+		arc4random(),
+        };
+        
+        xcb_create_window(wm->conn,
+            XCB_COPY_FROM_PARENT,
+            window->xcb_window,
+            window->xcb_parent,
+            window->x,
+            window->y,
+            window->width,
+            window->height,
+	    window->border_width,
+            XCB_WINDOW_CLASS_INPUT_OUTPUT,
+            window->xcb_screen->root_visual,
+            mask, values);
         return window;
 }
 
@@ -155,7 +173,6 @@ window_create_tile(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
         return window;
 }
 
@@ -180,7 +197,6 @@ window_create_client(struct wm *wm, struct window *window)
             XCB_WINDOW_CLASS_INPUT_OUTPUT,
             window->xcb_screen->root_visual,
             mask, values);
-	window->id = ++window_id;
         return window;
 }
 
@@ -242,7 +258,6 @@ window_border_color(struct wm *wm, struct window *window, const char *rgb_color)
 void
 window_border_width(struct wm *wm, struct window *window, uint32_t width)
 {
-	struct window *parent = tree_xget(&wm->windows, window->xcb_parent);
 	uint16_t mask =
 	    XCB_CONFIG_WINDOW_BORDER_WIDTH;
 	uint32_t value[1] = {
