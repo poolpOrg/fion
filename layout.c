@@ -147,13 +147,14 @@ layout_update_status(struct wm *wm, struct window *status)
 	buffer[strcspn(buffer, "\n")] = '\0';
 
 	status_printf(wm, status,
-	    "FION"
-	    " | %s"
-	    " | screen: %04llu"
-	    " | workspace: %04llu",
+	    " %s"
+	    " | screen: %- 2llu"
+	    " | workspace: %- 4llu"
+	    " | active tile: %p",
 	    buffer,
 	    n_screen,
-	    n_workspace);
+	    n_workspace,
+	    find_active_tile(wm, screen->xcb_screen->root));
 }
 
 static void
@@ -169,7 +170,7 @@ status_printf(struct wm *wm, struct window *status, const char *fmt, ...)
 	text_draw (wm->conn,
 	    status->xcb_screen,
 	    status->xcb_window,
-	    5, 12, ret);
+	    0, 12, ret);
 	free(ret);
 }
 
@@ -260,22 +261,26 @@ find_workspace_prev(struct wm *wm, struct window *workspace)
 static struct window *
 find_active_tile(struct wm *wm, xcb_window_t xcb_root)
 {
-	return tree_xget(&wm->curr_tile, xcb_root);
+	struct window *screen = find_screen(wm, xcb_root);
+	struct window *workspace = find_workspace(wm, screen);
+
+	return tree_xget(&wm->curr_tile, workspace->xcb_window);
 }
 
 static struct window *
 find_tile_next(struct wm *wm, struct window *tile)
 {
+	struct window *workspace = find_ancestor(wm, tile, WT_WORKSPACE);
 	struct window *node;
 	void *iter;
 
 	iter = NULL;
 	while (tree_iterfrom(&wm->tiles_by_id, &iter, tile->objid + 1, NULL, (void **)&node)) {
-		if (node->xcb_screen == tile->xcb_screen)
+		if (find_ancestor(wm, node, WT_WORKSPACE) == workspace)
 			return node;
 	}
 	while (tree_iter(&wm->tiles_by_id, &iter, NULL, (void **)&node))
-		if (node->xcb_screen == tile->xcb_screen)
+		if (find_ancestor(wm, node, WT_WORKSPACE) == workspace)
 			return node;
 	return tile;
 
@@ -284,6 +289,7 @@ find_tile_next(struct wm *wm, struct window *tile)
 static struct window *
 find_tile_prev(struct wm *wm, struct window *tile)
 {
+	struct window *workspace = find_ancestor(wm, tile, WT_WORKSPACE);
 	struct window *node;
 	struct window *prev;
 	struct window *last;
@@ -296,13 +302,16 @@ find_tile_prev(struct wm *wm, struct window *tile)
 				return prev;
 			break;
 		}
-		if (node->xcb_screen == tile->xcb_screen)
+		if (find_ancestor(wm, node, WT_WORKSPACE) == workspace)
 			prev = node;
 	}
 
+	iter = NULL;
 	while (tree_iter(&wm->tiles_by_id, &iter, NULL, (void **)&node))
-		if (node->xcb_screen == tile->xcb_screen)
+		if (find_ancestor(wm, node, WT_WORKSPACE) == workspace)
 			last = node;
+	if (last == NULL)
+		return tile;
 	return last;
 }
 
@@ -464,8 +473,6 @@ create_tile(struct wm *wm, struct window *parent)
 	window->width = parent->width - window->border_width * 2;
 	window->height = parent->height - window->border_width * 2;
 
-	tree_set(&wm->curr_tile, parent->xcb_screen->root, window);
-
 	tree_xset(&wm->tiles_by_id, window->objid, window);
 	tree_xset(&wm->tiles_by_window, window->objid, window);
 
@@ -526,7 +533,8 @@ prepare_workspace(struct wm *wm, struct window *workspace)
 
 	tile = create_tile(wm, workspace);
 	parent = create_tile_fork(wm, tile);
-
+	tree_xset(&wm->curr_tile, workspace->xcb_window, tile);
+	
 	prepare_tile_fork(wm, tile, parent);
 	prepare_tile(wm, tile);
 
@@ -598,9 +606,12 @@ static void
 tile_set_active(struct wm *wm, struct window *tile)
 {
 	struct window *curr_tile = find_active_tile(wm, tile->xcb_screen->root);
+	struct window *workspace = find_ancestor(wm, tile, WT_WORKSPACE);
+
 	if (tile != curr_tile)
 		window_border_color(wm, curr_tile, "#335599");
-	tree_set(&wm->curr_tile, tile->xcb_screen->root, tile);
+
+	tree_set(&wm->curr_tile, workspace->xcb_window, tile);
 	window_border_color(wm, tile, "#ff0000");
 }
 
@@ -831,6 +842,7 @@ layout_tile_next(struct wm *wm, xcb_window_t xcb_root)
 	log_debug("next: %p -> %p", tile, next);
 	if (next == tile)
 		return;
+
 	log_debug("next is %p", next);
 	tile_set_active(wm, next);
 	layout_update(wm);
@@ -845,6 +857,7 @@ layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 	log_debug("prev: %p -> %p", tile, prev);
 	if (prev == tile)
 		return;
+
 	tile_set_active(wm, prev);
 	layout_update(wm);
 }
