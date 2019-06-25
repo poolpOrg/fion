@@ -479,11 +479,10 @@ static void
 tile_set_active(struct wm *wm, struct window *tile)
 {
 	struct window *curr_tile = find_active_tile(wm, tile->xcb_screen->root);
-	window_border_color(wm, curr_tile, "#ffffff");
-
+	if (tile != curr_tile)
+		window_border_color(wm, curr_tile, "#ffffff");
 	tree_set(&wm->curr_tile, tile->xcb_screen->root, tile);
 	window_border_color(wm, tile, "#ff0000");
-	log_debug("current active tile: %p", tile);
 }
 
 static struct window *

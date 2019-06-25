@@ -240,7 +240,6 @@ window_resize(struct wm *wm, struct window *window)
                 window->width,
                 window->height,
         };
-
         xcb_configure_window(wm->conn, window->xcb_window, mask, values);
 }
 
@@ -260,9 +259,9 @@ window_border_width(struct wm *wm, struct window *window, uint32_t width)
 {
 	uint16_t mask =
 	    XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	uint32_t value[1] = {
-		width,
-	};
-	window->border_width = value[0];
-	xcb_configure_window(wm->conn, window->xcb_window, mask, &value);
+        uint32_t values[1] = {
+		width
+        };
+	window->border_width = width;
+	xcb_configure_window(wm->conn, window->xcb_window, mask, values);
 }
