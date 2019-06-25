@@ -302,6 +302,7 @@ static void
 on_enter_notify(struct wm *wm, xcb_enter_notify_event_t *ev)
 {
 	log_debug("on_enter_notify");
+	layout_tile_set_active(wm, ev->event);
 }
 
 static void

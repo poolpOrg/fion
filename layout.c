@@ -861,6 +861,14 @@ layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 	layout_update(wm);
 }
 
+void
+layout_tile_set_active(struct wm *wm, xcb_window_t window)
+{
+	struct window *tile = find_window(wm, window);
+
+	tile_set_active(wm, tile);
+}
+
 
 /**/
 static void

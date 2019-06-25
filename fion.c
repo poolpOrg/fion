@@ -102,7 +102,7 @@ fion_setup(struct wm *wm)
 	uint32_t value =
 	    XCB_EVENT_MASK_KEY_PRESS |
 	    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-	    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;	    
 
 	layout_init(wm);
 	iter = xcb_setup_roots_iterator(xcb_get_setup(wm->conn));

@@ -128,6 +128,7 @@ void		 layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direct
 void		 layout_client_resize(struct wm *wm, struct window *client);
 void		 layout_update(struct wm *wm);
 void		 layout_update_status(struct wm *wm, struct window *status);
+void		 layout_tile_set_active(struct wm *wm, xcb_window_t window);
 
 /* window.c */
 struct window	*window_create(struct wm *wm, enum window_type wt, struct window *parent);

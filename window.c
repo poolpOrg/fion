@@ -155,11 +155,12 @@ window_create_tilefork(struct wm *wm, struct window *window)
 struct window *
 window_create_tile(struct wm *wm, struct window *window)
 {
-        uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL;
-        uint32_t        values[2] = {
+        uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL|XCB_CW_EVENT_MASK;
+        uint32_t        values[3] = {
 		rgb_pixel("#000000"),
 		rgb_pixel("#335599"),
-        };
+		XCB_EVENT_MASK_ENTER_WINDOW|XCB_EVENT_MASK_LEAVE_WINDOW
+	};
         
         xcb_create_window(wm->conn,
             XCB_COPY_FROM_PARENT,
