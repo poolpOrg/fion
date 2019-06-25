@@ -33,13 +33,13 @@ static struct key	keys[] = {
 
 	{ XCB_MOD_MASK_3,	XK_w,		wm_workspace_create },
 	{ XCB_MOD_MASK_3,	XK_d,		wm_workspace_destroy },
-//	{ XCB_MOD_MASK_3,	XK_n,		wm_workspace_next },
-//	{ XCB_MOD_MASK_3,	XK_p,		wm_workspace_prev },
+	{ XCB_MOD_MASK_3,	XK_n,		wm_workspace_next },
+	{ XCB_MOD_MASK_3,	XK_p,		wm_workspace_prev },
 
 	{ XCB_MOD_MASK_3,	XK_h,		wm_tile_split_h },
 	{ XCB_MOD_MASK_3,	XK_v,		wm_tile_split_v },
-	{ XCB_MOD_MASK_3,	XK_n,		wm_tile_next },
-	{ XCB_MOD_MASK_3,	XK_p,		wm_tile_prev },
+	{ XCB_MOD_MASK_3,	XK_o,		wm_tile_next },
+	{ XCB_MOD_MASK_3,	XK_b,		wm_tile_prev },
 
 };
 
@@ -252,6 +252,7 @@ event_loop(struct wm *wm)
 			log_warnx("received unknown event \"%d\"", e->response_type & ~0x80);
 		}
 		free (e);
+		layout_update(wm);
 		xcb_flush(wm->conn);
 	} while (running);
 }

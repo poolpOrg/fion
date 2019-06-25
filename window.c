@@ -111,7 +111,7 @@ window_create_workspace(struct wm *wm, struct window *window)
         uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL;
         uint32_t        values[2] = {
 		rgb_pixel("#000000"),
-		arc4random(),
+		rgb_pixel("#335599"),
         };
         xcb_create_window(wm->conn,
             XCB_COPY_FROM_PARENT,
@@ -134,7 +134,7 @@ window_create_tilefork(struct wm *wm, struct window *window)
         uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL;
         uint32_t        values[2] = {
 		rgb_pixel("#000000"),
-		arc4random(),
+		rgb_pixel("#335599"),
         };
         
         xcb_create_window(wm->conn,
@@ -158,7 +158,7 @@ window_create_tile(struct wm *wm, struct window *window)
         uint32_t        mask = XCB_CW_BACK_PIXEL|XCB_CW_BORDER_PIXEL;
         uint32_t        values[2] = {
 		rgb_pixel("#000000"),
-		rgb_pixel("#FFFFFF"),
+		rgb_pixel("#335599"),
         };
         
         xcb_create_window(wm->conn,

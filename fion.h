@@ -30,7 +30,7 @@
 #define	BORDER_TILE_WIDTH		1
 #define	BORDER_TILE_ACTIVE_WIDTH       	1
 
-#define	STATUS_HEIGHT	15
+#define	STATUS_HEIGHT	16
 
 enum split {
 	HSPLIT,
@@ -60,6 +60,7 @@ struct wm {
 	struct tree tiles_by_window;
 
 	struct tree curr_workarea;
+	struct tree curr_status;
 	struct tree curr_workspace;
 	struct tree curr_tile;
 	struct tree curr_frame;
@@ -125,7 +126,8 @@ void		 layout_frame_next(struct wm *wm, xcb_window_t xcb_root);
 
 void		 layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction);
 void		 layout_client_resize(struct wm *wm, struct window *client);
-
+void		 layout_update(struct wm *wm);
+void		 layout_update_status(struct wm *wm, struct window *status);
 
 /* window.c */
 struct window	*window_create(struct wm *wm, enum window_type wt, struct window *parent);

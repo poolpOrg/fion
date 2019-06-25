@@ -16,6 +16,7 @@
 
 #include <err.h>
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,12 +50,32 @@ static void prepare_workspace(struct wm *wm, struct window *workspace);
 static void prepare_tile(struct wm *wm, struct window *tile);
 static void prepare_tile_fork(struct wm *wm, struct window *tile, struct window *parent);
 
+static uint64_t screen_number(struct wm *wm, struct window *screen);
+
+static void status_printf(struct wm *wm, struct window *status, const char *fmt, ...);
+
+static uint64_t workspace_number(struct wm *wm, struct window *workspace);
+
 static struct window *tile_split(struct wm *wm, struct window *tile, enum split direction);
 static void tile_resize(struct wm *wm, struct window *tile);
 static void tile_set_active(struct wm *wm, struct window *tile);
 
 
 static uint64_t objid;
+
+/**/
+static xcb_gc_t gc_font_get (xcb_connection_t *c,
+    xcb_screen_t     *screen,
+    xcb_window_t      window,
+    const char       *font_name);
+
+static void text_draw (xcb_connection_t *c,
+    xcb_screen_t     *screen,
+    xcb_window_t      window,
+    int16_t           x1,
+    int16_t           y1,
+    const char       *label);
+/**/
 
 
 /* layout initialization */
@@ -68,6 +89,7 @@ layout_init(struct wm *wm)
 	tree_init(&wm->tiles_by_window);
 
 	tree_init(&wm->curr_workarea);
+	tree_init(&wm->curr_status);
 	tree_init(&wm->curr_workspace);
 	tree_init(&wm->curr_tile);
 	tree_init(&wm->curr_frame);
@@ -94,6 +116,61 @@ layout_screen_render(struct wm *wm)
 		window_map(wm, node);
 	}
 	xcb_flush(wm->conn);
+}
+
+void
+layout_update(struct wm *wm)
+{
+	void *iter;
+	struct window *screen;
+	struct window *status;
+
+	iter = NULL;
+	while (tree_iter(&wm->screens_by_window, &iter, NULL, (void **)&screen)) {
+		status = tree_xget(&wm->curr_status, screen->xcb_screen->root);
+		layout_update_status(wm, status);
+	}
+	xcb_flush(wm->conn);
+}
+
+void
+layout_update_status(struct wm *wm, struct window *status)
+{
+	struct window *screen = find_ancestor(wm, status, WT_SCREEN);
+	uint64_t n_screen = screen_number(wm, screen);
+	uint64_t n_workspace = workspace_number(wm, find_workspace(wm, screen));
+	char buffer[26];
+	time_t tm;
+
+	time(&tm);
+	ctime_r(&tm, buffer);
+	buffer[strcspn(buffer, "\n")] = '\0';
+
+	status_printf(wm, status,
+	    "FION"
+	    " | %s"
+	    " | screen: %04llu"
+	    " | workspace: %04llu",
+	    buffer,
+	    n_screen,
+	    n_workspace);
+}
+
+static void
+status_printf(struct wm *wm, struct window *status, const char *fmt, ...)
+{
+	va_list	ap;
+	char *ret = NULL;
+
+	va_start(ap, fmt);
+	vasprintf(&ret, fmt, ap);
+	va_end(ap);
+
+	text_draw (wm->conn,
+	    status->xcb_screen,
+	    status->xcb_window,
+	    5, 12, ret);
+	free(ret);
 }
 
 
@@ -134,13 +211,13 @@ find_screen(struct wm *wm, xcb_window_t xcb_root)
 static struct window *
 find_workarea(struct wm *wm, struct window *screen)
 {
-	return tree_xget(&wm->curr_workarea, (uint64_t)screen->xcb_screen);
+	return tree_xget(&wm->curr_workarea, screen->xcb_screen->root);
 }
 
 static struct window *
 find_workspace(struct wm *wm, struct window *screen)
 {
-	return tree_xget(&wm->curr_workspace, (uint64_t)screen->xcb_screen);
+	return tree_xget(&wm->curr_workspace, screen->xcb_screen->root);
 }
 
 static struct window *
@@ -275,6 +352,8 @@ create_status(struct wm *wm, struct window *parent)
 	window->x = window->y = parent->border_width;
 	window->width = parent->width - window->border_width * 2;
 	window->height = STATUS_HEIGHT;
+
+	tree_set(&wm->curr_status, parent->xcb_screen->root, window);
 
 	tree_xset(&wm->windows, window->xcb_window, window);
 	tree_init(&window->children);
@@ -474,13 +553,53 @@ prepare_tile_fork(struct wm *wm, struct window *tile, struct window *parent)
 }
 
 
+/* screen */
+static uint64_t
+screen_number(struct wm *wm, struct window *screen)
+{
+	void *iter;
+	struct window *node;
+	uint64_t n;
+
+	n = 0;
+	iter = NULL;
+	while (tree_iter(&wm->screens_by_window, &iter, NULL, (void **)&node)) {
+		if (node->xcb_screen->root == screen->xcb_screen->root)
+			break;
+		n++;
+	}
+	return n;
+}
+
+
+/* workspace */
+static uint64_t
+workspace_number(struct wm *wm, struct window *workspace)
+{
+	struct window *workarea = find_ancestor(wm, workspace, WT_WORKAREA);
+	struct window *node;
+	void *iter;
+	uint64_t n;
+
+	n = 0;
+	iter = NULL;
+	while (tree_iter(&workarea->children, &iter, NULL, (void **)&node)) {
+		if (node->xcb_window == workspace->xcb_window)
+			break;
+		if (node->xcb_screen->root == workspace->xcb_screen->root)
+			n++;
+	}
+	return n;
+}
+
+
 /* tile */
 static void
 tile_set_active(struct wm *wm, struct window *tile)
 {
 	struct window *curr_tile = find_active_tile(wm, tile->xcb_screen->root);
 	if (tile != curr_tile)
-		window_border_color(wm, curr_tile, "#ffffff");
+		window_border_color(wm, curr_tile, "#335599");
 	tree_set(&wm->curr_tile, tile->xcb_screen->root, tile);
 	window_border_color(wm, tile, "#ff0000");
 }
@@ -491,20 +610,21 @@ tile_split(struct wm *wm, struct window *tile, enum split direction)
 	struct window *parent;
 	struct window *sibling;
 
-	/* 1- create a clone tile that will become parent */
+	/* 1- create a clone tile to become parent of current tile */
 	parent = create_tile_fork(wm, tile);
 
-	/* 2- create a sibling tile */
+	/* 2- create a sibling tile child to new parent */
 	sibling = create_tile(wm, parent);
 	prepare_tile(wm, sibling);
 
-	/* 3- reparent tile to new parent */
+	/* 3- reparent current tile to new parent */
 	prepare_tile_fork(wm, tile, parent);
 
+	/* 4- reset offsets relative to new parent */
 	tile->x = tile->y = 0;
 	sibling->x = sibling->y = 0;
 
-	/* 4- recompute tile and sibling sizes */
+	/* 5- recompute tile and sibling sizes */
 	switch (direction) {
 	case HSPLIT:
 		tile->width = parent->width - 2 * tile->border_width;
@@ -620,6 +740,7 @@ layout_workspace_create(struct wm *wm, xcb_window_t xcb_root)
 	prepare_workspace(wm, window);
 	window_map(wm, window);
 	window_unmap(wm, workspace);
+	layout_update(wm);
 }
 
 void
@@ -640,6 +761,7 @@ layout_workspace_destroy(struct wm *wm, xcb_window_t xcb_root)
 	window_map(wm, next);
 	tree_set(&wm->curr_workspace, screen->xcb_screen->root, next);	
 	window_unmap(wm, workspace);	
+	layout_update(wm);
 }
 
 void
@@ -655,6 +777,7 @@ layout_workspace_next(struct wm *wm, xcb_window_t xcb_root)
 	window_map(wm, next);
 	tree_set(&wm->curr_workspace, screen->xcb_screen->root, next);
 	window_unmap(wm, workspace);
+	layout_update(wm);
 }
 
 void
@@ -670,6 +793,7 @@ layout_workspace_prev(struct wm *wm, xcb_window_t xcb_root)
 	window_map(wm, prev);
 	tree_set(&wm->curr_workspace, screen->xcb_screen->root, prev);
 	window_unmap(wm, workspace);
+	layout_update(wm);
 }
 
 void
@@ -695,6 +819,7 @@ layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
 	window_map(wm, find_ancestor(wm, sibling, WT_TILEFORK));
 	window_map(wm, sibling);
 	window_map(wm, tile);
+	layout_update(wm);
 }
 
 void
@@ -708,6 +833,7 @@ layout_tile_next(struct wm *wm, xcb_window_t xcb_root)
 		return;
 	log_debug("next is %p", next);
 	tile_set_active(wm, next);
+	layout_update(wm);
 }
 
 void
@@ -720,4 +846,95 @@ layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 	if (prev == tile)
 		return;
 	tile_set_active(wm, prev);
+	layout_update(wm);
 }
+
+
+/**/
+static void
+text_draw (xcb_connection_t *c,
+    xcb_screen_t     *screen,
+    xcb_window_t      window,
+    int16_t           x1,
+    int16_t           y1,
+    const char       *label)
+{
+	xcb_void_cookie_t    cookie_gc;
+	xcb_void_cookie_t    cookie_text;
+	xcb_generic_error_t *error;
+	xcb_gcontext_t       gc;
+	uint8_t              length;
+
+	length = strlen (label);
+
+	gc = gc_font_get(c, screen, window, "7x13");
+
+	cookie_text = xcb_image_text_8_checked (c, length, window, gc,
+	    x1,
+	    y1, label);
+	error = xcb_request_check (c, cookie_text);
+	if (error) {
+		fprintf (stderr, "ERROR: can't paste text : %d\n", error->error_code);
+		xcb_disconnect (c);
+		exit (-1);
+	}
+
+	cookie_gc = xcb_free_gc (c, gc);
+	error = xcb_request_check (c, cookie_gc);
+	if (error) {
+		fprintf (stderr, "ERROR: can't free gc : %d\n", error->error_code);
+		xcb_disconnect (c);
+		exit (-1);
+	}
+}
+
+static xcb_gc_t
+gc_font_get (xcb_connection_t *c,
+    xcb_screen_t     *screen,
+    xcb_window_t      window,
+    const char       *font_name)
+{
+	uint32_t             value_list[3];
+	xcb_void_cookie_t    cookie_font;
+	xcb_void_cookie_t    cookie_gc;
+	xcb_generic_error_t *error;
+	xcb_font_t           font;
+	xcb_gcontext_t       gc;
+	uint32_t             mask;
+
+	font = xcb_generate_id (c);
+	cookie_font = xcb_open_font_checked (c, font,
+	    strlen (font_name),
+	    font_name);
+
+	error = xcb_request_check (c, cookie_font);
+	if (error) {
+		fprintf (stderr, "ERROR: can't open font : %d\n", error->error_code);
+		xcb_disconnect (c);
+		return -1;
+	}
+
+	gc = xcb_generate_id (c);
+	mask = XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT;
+	value_list[0] = screen->white_pixel;
+	value_list[1] = screen->black_pixel;
+	value_list[2] = font;
+	cookie_gc = xcb_create_gc_checked (c, gc, window, mask, value_list);
+	error = xcb_request_check (c, cookie_gc);
+	if (error) {
+		fprintf (stderr, "ERROR: can't create gc : %d\n", error->error_code);
+		xcb_disconnect (c);
+		exit (-1);
+	}
+
+	cookie_font = xcb_close_font_checked (c, font);
+	error = xcb_request_check (c, cookie_font);
+	if (error) {
+		fprintf (stderr, "ERROR: can't close font : %d\n", error->error_code);
+		xcb_disconnect (c);
+		exit (-1);
+	}
+
+	return gc;
+}
+/**/
