@@ -30,6 +30,7 @@ static struct key	keys[] = {
 	{ XCB_MOD_MASK_3,	XK_q,		event_quit },
 
 	{ XCB_MOD_MASK_3,	XK_t,		wm_run_terminal },
+	{ XCB_MOD_MASK_3,	XK_x,		wm_run_xeyes },
 
 	{ XCB_MOD_MASK_3,	XK_w,		wm_workspace_create },
 	{ XCB_MOD_MASK_3,	XK_d,		wm_workspace_destroy },
@@ -301,14 +302,14 @@ on_motion_notify(struct wm *wm, xcb_motion_notify_event_t *ev)
 static void
 on_enter_notify(struct wm *wm, xcb_enter_notify_event_t *ev)
 {
-	log_debug("on_enter_notify");
+	/*log_debug("on_enter_notify");*/
 	layout_tile_set_active(wm, ev->event);
 }
 
 static void
 on_leave_notify(struct wm *wm, xcb_leave_notify_event_t *ev)
 {
-	log_debug("on_leave_notify");
+	/*log_debug("on_leave_notify");*/
 }
 
 static void
@@ -365,7 +366,7 @@ on_create_notify(struct wm *wm, xcb_create_notify_event_t *ev)
 		layout_client_create(wm, ev->parent, ev->window);
 	}
 	else {
-		log_debug("reusing window... woops");
+		log_debug("reusing window... woops: %d", window->type);
 	}
 }
 
@@ -379,32 +380,33 @@ on_destroy_notify(struct wm *wm, xcb_destroy_notify_event_t *ev)
 static void
 on_unmap_notify(struct wm *wm, xcb_unmap_notify_event_t *ev)
 {
-	log_debug("on_unmap_notify");
+	/*log_debug("on_unmap_notify");*/
 }
 
 static void
 on_map_notify(struct wm *wm, xcb_map_notify_event_t *ev)
 {
-	log_debug("on_map_notify");
+	/*log_debug("on_map_notify");*/
 }
 
 static void
 on_map_request(struct wm *wm, xcb_map_request_event_t *ev)
 {
-	log_debug("on_map_request");
+	/*log_debug("on_map_request");*/
 	xcb_map_window(wm->conn, ev->window);
 }
 
 static void
 on_reparent_notify(struct wm *wm, xcb_reparent_notify_event_t *ev)
 {
-	log_debug("on_reparent_notify");
+	log_debug("on_reparent_notify: %d", ev->window);
 }
 
 static void
 on_configure_notify(struct wm *wm, xcb_configure_notify_event_t *ev)
 {
-	log_debug("on_configure_notify");
+	log_debug("on_configure_notify: %d", ev->window);
+	layout_window_resize(wm, ev->window);
 }
 
 static void
@@ -476,7 +478,7 @@ on_client_message(struct wm *wm, xcb_client_message_event_t *ev)
 static void
 on_mapping_notify(struct wm *wm, xcb_mapping_notify_event_t *ev)
 {
-	log_debug("on_mapping_notify");
+	/*log_debug("on_mapping_notify");*/
 }
 
 static void	on_ge_generic(struct wm *wm, xcb_ge_generic_event_t *ev)

@@ -36,9 +36,27 @@ wm_run_terminal(struct wm *wm, xcb_window_t xcb_root)
 	if (pid)
 		return;
 
-	execlp("xterm", "xterm", NULL);
+	execlp("xterm", "xterm", "-fg", "white", "-bg", "black", NULL);
 	exit(1);
 }
+
+void
+wm_run_xeyes(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("run_xeyes");
+	pid_t	pid;
+
+	if ((pid = fork()) < 0) {
+		warn("wm_run_xeyes");
+		return;
+	}
+	if (pid)
+		return;
+
+	execlp("xeyes", "xeyes", NULL);
+	exit(1);
+}
+
 
 void
 wm_workspace_create(struct wm *wm, xcb_window_t xcb_root)

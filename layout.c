@@ -879,6 +879,13 @@ layout_tile_set_active(struct wm *wm, xcb_window_t window)
 	tile_set_active(wm, tile);
 }
 
+void
+layout_window_resize(struct wm *wm, xcb_window_t window)
+{
+	struct window *tile = find_window(wm, window);
+	window_resize(wm, tile);
+}
+
 
 /**/
 static void

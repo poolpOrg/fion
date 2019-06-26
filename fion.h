@@ -130,6 +130,7 @@ void		 layout_update(struct wm *wm);
 void		 layout_update_status(struct wm *wm, struct window *status);
 void		 layout_tile_set_active(struct wm *wm, xcb_window_t window);
 void		 layout_client_destroy(struct wm *wm, xcb_window_t xcb_window);
+void		 layout_window_resize(struct wm *wm, xcb_window_t window);
 
 
 /* window.c */
@@ -160,6 +161,7 @@ void		 wm_workspace_next(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_workspace_prev(struct wm *wm, xcb_window_t xcb_root);
 
 void		 wm_run_terminal(struct wm *wm, xcb_window_t xcb_root);
+void		 wm_run_xeyes(struct wm *wm, xcb_window_t xcb_root);
 
 void		 wm_tile_split_h(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_tile_split_v(struct wm *wm, xcb_window_t xcb_root);
