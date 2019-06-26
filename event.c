@@ -356,15 +356,24 @@ on_visibility_notify(struct wm *wm, xcb_visibility_notify_event_t *ev)
 static void
 on_create_notify(struct wm *wm, xcb_create_notify_event_t *ev)
 {
+	struct window *window = layout_window_get(wm, ev->window);
+
 	log_debug("on_create_notify: %lld", (long long)ev->window);
-	if ((layout_window_get(wm, ev->window)) == NULL)
+
+	if (window == NULL) {
+		log_debug("creating new client window");
 		layout_client_create(wm, ev->parent, ev->window);
+	}
+	else {
+		log_debug("reusing window... woops");
+	}
 }
 
 static void
 on_destroy_notify(struct wm *wm, xcb_destroy_notify_event_t *ev)
 {
 	log_debug("on_destroy_notify: %lld", (long long)ev->window);
+	layout_client_destroy(wm, ev->window);
 }
 
 static void

@@ -45,6 +45,8 @@ static struct window *create_tile(struct wm *wm, struct window *parent);
 static struct window *create_tile_fork(struct wm *wm, struct window *tile);
 static struct window *create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window);
 
+static void destroy_window(struct wm *wm, struct window *);
+
 static void prepare_screen(struct wm *wm, struct window *screen);
 static void prepare_workspace(struct wm *wm, struct window *workspace);
 static void prepare_tile(struct wm *wm, struct window *tile);
@@ -64,17 +66,8 @@ static void tile_set_active(struct wm *wm, struct window *tile);
 static uint64_t objid;
 
 /**/
-static xcb_gc_t gc_font_get (xcb_connection_t *c,
-    xcb_screen_t     *screen,
-    xcb_window_t      window,
-    const char       *font_name);
-
-static void text_draw (xcb_connection_t *c,
-    xcb_screen_t     *screen,
-    xcb_window_t      window,
-    int16_t           x1,
-    int16_t           y1,
-    const char       *label);
+static xcb_gc_t gc_font_get (struct wm *wm, struct window *window, const char *font_name);
+static void text_draw (struct wm *wm, struct window *window, int16_t x1, int16_t y1, const char *label);
 /**/
 
 
@@ -167,10 +160,7 @@ status_printf(struct wm *wm, struct window *status, const char *fmt, ...)
 	vasprintf(&ret, fmt, ap);
 	va_end(ap);
 
-	text_draw (wm->conn,
-	    status->xcb_screen,
-	    status->xcb_window,
-	    0, 12, ret);
+	text_draw(wm, status, 0, 12, ret);
 	free(ret);
 }
 
@@ -502,9 +492,21 @@ create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window)
 	window->height = parent->height - window->border_width * 2;
 
 	tree_xset(&wm->windows, window->xcb_window, window);
-	tree_init(&window->children);
 	tree_xset(&parent->children, window->objid, window);
 	return window_create_client(wm, window);
+}
+
+
+/* high-level window destruction functions */
+void
+destroy_client(struct wm *wm, struct window *client)
+{
+	struct window *parent = find_window(wm, client->xcb_parent);
+
+	window_destroy(wm, client);
+	tree_xpop(&wm->windows, client->xcb_window);
+	tree_xpop(&parent->children, client->objid);
+	free(client);
 }
 
 
@@ -705,6 +707,14 @@ layout_client_create(struct wm *wm, xcb_window_t xcb_root, xcb_window_t xcb_wind
 	return (client);
 }
 
+void
+layout_client_destroy(struct wm *wm, xcb_window_t xcb_window)
+{
+	struct window *client = find_window(wm, xcb_window);
+
+	destroy_client(wm, client);
+}
+
 
 /* window management */
 struct window *
@@ -872,12 +882,7 @@ layout_tile_set_active(struct wm *wm, xcb_window_t window)
 
 /**/
 static void
-text_draw (xcb_connection_t *c,
-    xcb_screen_t     *screen,
-    xcb_window_t      window,
-    int16_t           x1,
-    int16_t           y1,
-    const char       *label)
+text_draw(struct wm *wm, struct window *window, int16_t x1, int16_t y1, const char *label)
 {
 	xcb_void_cookie_t    cookie_gc;
 	xcb_void_cookie_t    cookie_text;
@@ -887,32 +892,29 @@ text_draw (xcb_connection_t *c,
 
 	length = strlen (label);
 
-	gc = gc_font_get(c, screen, window, "7x13");
+	gc = gc_font_get(wm, window, "7x13");
 
-	cookie_text = xcb_image_text_8_checked (c, length, window, gc,
+	cookie_text = xcb_image_text_8_checked (wm->conn, length, window->xcb_window, gc,
 	    x1,
 	    y1, label);
-	error = xcb_request_check (c, cookie_text);
+	error = xcb_request_check (wm->conn, cookie_text);
 	if (error) {
 		fprintf (stderr, "ERROR: can't paste text : %d\n", error->error_code);
-		xcb_disconnect (c);
+		xcb_disconnect (wm->conn);
 		exit (-1);
 	}
 
-	cookie_gc = xcb_free_gc (c, gc);
-	error = xcb_request_check (c, cookie_gc);
+	cookie_gc = xcb_free_gc (wm->conn, gc);
+	error = xcb_request_check (wm->conn, cookie_gc);
 	if (error) {
 		fprintf (stderr, "ERROR: can't free gc : %d\n", error->error_code);
-		xcb_disconnect (c);
+		xcb_disconnect (wm->conn);
 		exit (-1);
 	}
 }
 
 static xcb_gc_t
-gc_font_get (xcb_connection_t *c,
-    xcb_screen_t     *screen,
-    xcb_window_t      window,
-    const char       *font_name)
+gc_font_get (struct wm *wm, struct window *window, const char *font_name)
 {
 	uint32_t             value_list[3];
 	xcb_void_cookie_t    cookie_font;
@@ -922,36 +924,36 @@ gc_font_get (xcb_connection_t *c,
 	xcb_gcontext_t       gc;
 	uint32_t             mask;
 
-	font = xcb_generate_id (c);
-	cookie_font = xcb_open_font_checked (c, font,
+	font = xcb_generate_id (wm->conn);
+	cookie_font = xcb_open_font_checked (wm->conn, font,
 	    strlen (font_name),
 	    font_name);
 
-	error = xcb_request_check (c, cookie_font);
+	error = xcb_request_check (wm->conn, cookie_font);
 	if (error) {
 		fprintf (stderr, "ERROR: can't open font : %d\n", error->error_code);
-		xcb_disconnect (c);
+		xcb_disconnect (wm->conn);
 		return -1;
 	}
 
-	gc = xcb_generate_id (c);
+	gc = xcb_generate_id (wm->conn);
 	mask = XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT;
-	value_list[0] = screen->white_pixel;
-	value_list[1] = screen->black_pixel;
+	value_list[0] = window->xcb_screen->white_pixel;
+	value_list[1] = window->xcb_screen->black_pixel;
 	value_list[2] = font;
-	cookie_gc = xcb_create_gc_checked (c, gc, window, mask, value_list);
-	error = xcb_request_check (c, cookie_gc);
+	cookie_gc = xcb_create_gc_checked (wm->conn, gc, window->xcb_window, mask, value_list);
+	error = xcb_request_check (wm->conn, cookie_gc);
 	if (error) {
 		fprintf (stderr, "ERROR: can't create gc : %d\n", error->error_code);
-		xcb_disconnect (c);
+		xcb_disconnect (wm->conn);
 		exit (-1);
 	}
 
-	cookie_font = xcb_close_font_checked (c, font);
-	error = xcb_request_check (c, cookie_font);
+	cookie_font = xcb_close_font_checked (wm->conn, font);
+	error = xcb_request_check (wm->conn, cookie_font);
 	if (error) {
 		fprintf (stderr, "ERROR: can't close font : %d\n", error->error_code);
-		xcb_disconnect (c);
+		xcb_disconnect (wm->conn);
 		exit (-1);
 	}
 

@@ -101,6 +101,7 @@ fion_setup(struct wm *wm)
 	uint64_t screen_id = 0;
 	uint32_t value =
 	    XCB_EVENT_MASK_KEY_PRESS |
+	    XCB_EVENT_MASK_STRUCTURE_NOTIFY |
 	    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
 	    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;	    
 

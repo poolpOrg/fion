@@ -159,7 +159,10 @@ window_create_tile(struct wm *wm, struct window *window)
         uint32_t        values[3] = {
 		rgb_pixel("#000000"),
 		rgb_pixel("#335599"),
-		XCB_EVENT_MASK_ENTER_WINDOW|XCB_EVENT_MASK_LEAVE_WINDOW
+		0
+		| XCB_EVENT_MASK_ENTER_WINDOW
+		| XCB_EVENT_MASK_LEAVE_WINDOW
+		| XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
 	};
         
         xcb_create_window(wm->conn,
@@ -211,6 +214,12 @@ void
 window_unmap(struct wm *wm, struct window *window)
 {
 	xcb_unmap_window(wm->conn, window->xcb_window);
+}
+
+void
+window_destroy(struct wm *wm, struct window *window)
+{
+	xcb_destroy_window(wm->conn, window->xcb_window);
 }
 
 void

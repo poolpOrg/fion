@@ -129,6 +129,8 @@ void		 layout_client_resize(struct wm *wm, struct window *client);
 void		 layout_update(struct wm *wm);
 void		 layout_update_status(struct wm *wm, struct window *status);
 void		 layout_tile_set_active(struct wm *wm, xcb_window_t window);
+void		 layout_client_destroy(struct wm *wm, xcb_window_t xcb_window);
+
 
 /* window.c */
 struct window	*window_create(struct wm *wm, enum window_type wt, struct window *parent);
@@ -144,6 +146,7 @@ struct window	*window_create_client(struct wm *wm, struct window *window);
 
 void		 window_map(struct wm *wm, struct window *window);
 void		 window_unmap(struct wm *wm, struct window *window);
+void		 window_destroy(struct wm *wm, struct window *window);
 void		 window_raise(struct wm *wm, struct window *window);
 void		 window_reparent(struct wm *wm, struct window *parent, struct window *window);
 void		 window_resize(struct wm *wm, struct window *window);
