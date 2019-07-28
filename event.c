@@ -23,29 +23,122 @@
 #include "fion.h"
 #include "log.h"
 
+
+#define	KBMODE_WORKSPACE	1
+#define	KBMODE_TILE		2
+#define	KBMODE_RUN		3
+
+
 static int		running = 1;
+static int		mode;
 static inline void	event_quit(struct wm *wm, xcb_window_t screen) { running = 0; }
+static inline void	event_workspace(struct wm *wm, xcb_window_t screen) { mode = KBMODE_WORKSPACE; log_debug("workspace mode"); }
+static inline void	event_tile(struct wm *wm, xcb_window_t screen) { mode = KBMODE_TILE; log_debug("tile mode"); }
+static inline void	event_run(struct wm *wm, xcb_window_t screen) { mode = KBMODE_RUN; log_debug("run mode"); }
+
+static inline void
+kb_c(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_WORKSPACE:
+		wm_workspace_create(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_d(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_WORKSPACE:
+		wm_workspace_destroy(wm, screen);
+		break;
+	case KBMODE_TILE:
+		wm_tile_destroy(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_n(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_WORKSPACE:
+		wm_workspace_next(wm, screen);
+		break;
+	case KBMODE_TILE:
+		wm_tile_next(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_p(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_WORKSPACE:
+		wm_workspace_prev(wm, screen);
+		break;
+	case KBMODE_TILE:
+		wm_tile_prev(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_h(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_TILE:
+		wm_tile_split_h(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_v(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_TILE:
+		wm_tile_split_v(wm, screen);
+		break;
+	}
+	mode = 0;
+}
+
+static inline void
+kb_t(struct wm *wm, xcb_window_t screen)
+{
+	switch (mode) {
+	case KBMODE_RUN:
+		wm_run_terminal(wm, screen);
+		break;
+	}
+	mode = 0;
+}
 
 static struct key	keys[] = {
 	{ XCB_MOD_MASK_4,	XK_q,		event_quit },
 
-	{ XCB_MOD_MASK_4,	XK_t,		wm_run_terminal },
-	{ XCB_MOD_MASK_4,	XK_x,		wm_run_xeyes },
+	{ XCB_MOD_MASK_4,	XK_w,		event_workspace },
+	{ XCB_MOD_MASK_4,	XK_t,		event_tile },
+	{ XCB_MOD_MASK_4,	XK_r,		event_run },
 
-	{ XCB_MOD_MASK_4,	XK_w,		wm_workspace_create },
-	{ XCB_MOD_MASK_4,	XK_d,		wm_workspace_destroy },
-	{ XCB_MOD_MASK_4,	XK_n,		wm_workspace_next },
-	{ XCB_MOD_MASK_4,	XK_p,		wm_workspace_prev },
+	{ 0,	XK_c,		kb_c },		/* create */
+	{ 0,	XK_d,		kb_d },		/* destroy */
+	{ 0,	XK_n,		kb_n },		/* next */
+	{ 0,	XK_p,		kb_p },		/* prev */
 
-	{ XCB_MOD_MASK_4,	XK_h,		wm_tile_split_h },
-	{ XCB_MOD_MASK_4,	XK_v,		wm_tile_split_v },
-	{ XCB_MOD_MASK_4,	XK_o,		wm_tile_next },
-	{ XCB_MOD_MASK_4,	XK_b,		wm_tile_prev },
-	{ XCB_MOD_MASK_4,	XK_s,		wm_tile_destroy },
+	{ 0,	XK_h,		kb_h },		/* horizontal */
+	{ 0,	XK_v,		kb_v },		/* vertical */
+
+	{ 0,	XK_t,		kb_t },		/* terminal */
 };
-
-
-
 
 static void	on_key_press(struct wm *wm, xcb_key_press_event_t *ev);
 static void	on_key_release(struct wm *wm, xcb_key_release_event_t *ev);
@@ -273,9 +366,11 @@ on_key_press(struct wm *wm, xcb_key_press_event_t *ev)
 	xcb_key_symbols_free(ksyms);
 
 	for (i = 0; (size_t)i < sizeof(keys) / sizeof(struct key); ++i)
-		if (ev->state & keys[i].mod && ksym == keys[i].ksym && keys[i].cb) {
+		if ((keys[i].mod == 0 || (ev->state & keys[i].mod)) && ksym == keys[i].ksym && keys[i].cb) {
 			keys[i].cb(wm, ev->root);
+			return;
 		}
+	mode = 0;
 }
 
 static void
