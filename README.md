@@ -35,6 +35,7 @@ missing
 - framing inside tiles so that it is possible to iterate between X clients attached to the same tile
 - splitting tiles halves the parent tile, support for resizing should be implemented
 - a cross workspace tile should be implemented, similar to ion's alt-space tile
+- status bar is only updated when layout is redisplayed, a ticker should be set in the event loop with proper multiplexing
 
 
 obligatory screenshots
