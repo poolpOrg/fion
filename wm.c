@@ -113,3 +113,10 @@ wm_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 	log_debug("tile_prev");
 	layout_tile_prev(wm, xcb_root);
 }
+
+void
+wm_tile_destroy(struct wm *wm, xcb_window_t xcb_root)
+{
+	log_debug("tile_destroy");
+	layout_tile_destroy(wm, xcb_root);
+}

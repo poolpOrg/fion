@@ -45,8 +45,6 @@ static struct window *create_tile(struct wm *wm, struct window *parent);
 static struct window *create_tile_fork(struct wm *wm, struct window *tile);
 static struct window *create_client(struct wm *wm, struct window *parent, xcb_window_t xcb_window);
 
-static void destroy_window(struct wm *wm, struct window *);
-
 static void prepare_screen(struct wm *wm, struct window *screen);
 static void prepare_workspace(struct wm *wm, struct window *workspace);
 static void prepare_tile(struct wm *wm, struct window *tile);
@@ -62,6 +60,9 @@ static struct window *tile_split(struct wm *wm, struct window *tile, enum split 
 static void tile_resize(struct wm *wm, struct window *tile);
 static void tile_set_active(struct wm *wm, struct window *tile);
 
+void destroy_client(struct wm *wm, struct window *client);
+const char *
+window_type_name(struct window *window);
 
 static uint64_t objid;
 
@@ -109,6 +110,36 @@ layout_screen_render(struct wm *wm)
 		window_map(wm, node);
 	}
 	xcb_flush(wm->conn);
+}
+
+void
+layout_debug(struct wm *wm, struct window *window, int depth)
+{
+	void *iter;
+	int i;
+	char *buffer;
+	struct window *node;
+
+	if (window == NULL) {
+		iter = NULL;
+		while (tree_iter(&wm->screens_by_window, &iter, NULL, (void **)&window))
+			layout_debug(wm, window, 0);
+		return;
+	}
+
+	buffer = calloc(depth+1, 1);
+	for (i = 0; i < depth; ++i)
+		buffer[i] = ' ';
+	log_debug("%sWindow id=%"PRIx64" type=%s",
+	    buffer,
+	    window->objid,
+	    window_type_name(window));
+
+	iter = NULL;
+	while (tree_iter(&window->children, &iter, NULL, (void **)&node))
+		layout_debug(wm, node, depth+1);
+
+	free(buffer);
 }
 
 void
@@ -441,7 +472,9 @@ create_tile_fork(struct wm *wm, struct window *tile)
 	
 	tree_xset(&wm->windows, window->xcb_window, window);
 	tree_init(&window->children);
+
 	tree_xset(&parent->children, window->objid, window);
+
 	return window_create_tilefork(wm, window);
 }
 
@@ -469,6 +502,7 @@ create_tile(struct wm *wm, struct window *parent)
 
 	tree_xset(&wm->windows, window->xcb_window, window);
 	tree_init(&window->children);
+
 	tree_xset(&parent->children, window->objid, window);
 	return window_create_tile(wm, window);
 }
@@ -555,12 +589,17 @@ prepare_tile(struct wm *wm, struct window *tile)
 static void
 prepare_tile_fork(struct wm *wm, struct window *tile, struct window *parent)
 {
+	struct window *old = find_window(wm, tile->xcb_parent);
+
 	tile->width = parent->width - tile->border_width * 2;
 	tile->height = parent->height - tile->border_width * 2;
 	window_resize(wm, tile);
 
 	tile->xcb_parent = parent->xcb_window;
 	window_reparent(wm, parent, tile);
+
+	tree_xpop(&old->children, tile->objid);
+	tree_xset(&parent->children, tile->objid, tile);
 }
 
 
@@ -624,8 +663,10 @@ tile_split(struct wm *wm, struct window *tile, enum split direction)
 	struct window *parent;
 	struct window *sibling;
 
-	/* 1- create a clone tile to become parent of current tile */
-	parent = create_tile_fork(wm, tile);
+	/* 1- create a clone tile to become parent of current tile if necessary */
+	parent = find_ancestor(wm, tile, WT_TILEFORK);
+	if (tree_count(&parent->children) != 1)
+		parent = create_tile_fork(wm, tile);
 
 	/* 2- create a sibling tile child to new parent */
 	sibling = create_tile(wm, parent);
@@ -840,6 +881,11 @@ layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
 	window_map(wm, sibling);
 	window_map(wm, tile);
 	layout_update(wm);
+	/**
+	 */
+	log_debug("----------");
+	layout_debug(wm, NULL, 0);
+	log_debug("");
 }
 
 void
@@ -869,6 +915,39 @@ layout_tile_prev(struct wm *wm, xcb_window_t xcb_root)
 
 	tile_set_active(wm, prev);
 	layout_update(wm);
+}
+void
+
+layout_tile_destroy(struct wm *wm, xcb_window_t xcb_root)
+{
+	struct window *tile = find_active_tile(wm, xcb_root);
+	struct window *sibling = find_tile_next(wm, tile);
+	struct window *parent = find_ancestor(wm, tile, WT_TILEFORK);
+
+	if (sibling == tile) {
+		/* only tile */
+		log_debug("no sibling");
+	}
+	else {
+		/* has sibling */
+		sibling->x = sibling->y = 0;
+		sibling->height = parent->height - 2*sibling->border_width;
+		sibling->width = parent->width - 2*sibling->border_width;
+		window_resize(wm, sibling);
+		tile_set_active(wm, sibling);
+
+		window_unmap(wm, tile);
+		tree_xpop(&wm->tiles_by_id, tile->objid);
+		tree_xpop(&parent->children, tile->objid);
+		tree_xpop(&wm->windows, tile->xcb_window);
+
+		/* tilefork collapsing required ? */
+	}
+	/**
+	 */
+	log_debug("----------");
+	layout_debug(wm, NULL, 0);
+	log_debug("");
 }
 
 void
@@ -967,3 +1046,26 @@ gc_font_get (struct wm *wm, struct window *window, const char *font_name)
 	return gc;
 }
 /**/
+
+const char *
+window_type_name(struct window *window)
+{
+	switch (window->type) {
+	case WT_CLIENT:
+		return "client";
+	case WT_SCREEN:
+		return "screen";
+	case WT_STATUSBAR:
+		return "statusbar";
+	case WT_WORKAREA:
+		return "workarea";
+	case WT_WORKSPACE:
+		return "workspace";
+	case WT_TILEFORK:
+		return "tilefork";
+	case WT_TILE:
+		return "tile";
+	case WT_FRAME:
+		return "frame";
+	}
+}
