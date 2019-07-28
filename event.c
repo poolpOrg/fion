@@ -27,22 +27,25 @@ static int		running = 1;
 static inline void	event_quit(struct wm *wm, xcb_window_t screen) { running = 0; }
 
 static struct key	keys[] = {
-	{ XCB_MOD_MASK_3,	XK_q,		event_quit },
+	{ XCB_MOD_MASK_4,	XK_q,		event_quit },
 
-	{ XCB_MOD_MASK_3,	XK_t,		wm_run_terminal },
-	{ XCB_MOD_MASK_3,	XK_x,		wm_run_xeyes },
+	{ XCB_MOD_MASK_4,	XK_t,		wm_run_terminal },
+	{ XCB_MOD_MASK_4,	XK_x,		wm_run_xeyes },
 
-	{ XCB_MOD_MASK_3,	XK_w,		wm_workspace_create },
-	{ XCB_MOD_MASK_3,	XK_d,		wm_workspace_destroy },
-	{ XCB_MOD_MASK_3,	XK_n,		wm_workspace_next },
-	{ XCB_MOD_MASK_3,	XK_p,		wm_workspace_prev },
+	{ XCB_MOD_MASK_4,	XK_w,		wm_workspace_create },
+	{ XCB_MOD_MASK_4,	XK_d,		wm_workspace_destroy },
+	{ XCB_MOD_MASK_4,	XK_n,		wm_workspace_next },
+	{ XCB_MOD_MASK_4,	XK_p,		wm_workspace_prev },
 
-	{ XCB_MOD_MASK_3,	XK_h,		wm_tile_split_h },
-	{ XCB_MOD_MASK_3,	XK_v,		wm_tile_split_v },
-	{ XCB_MOD_MASK_3,	XK_o,		wm_tile_next },
-	{ XCB_MOD_MASK_3,	XK_b,		wm_tile_prev },
-
+	{ XCB_MOD_MASK_4,	XK_h,		wm_tile_split_h },
+	{ XCB_MOD_MASK_4,	XK_v,		wm_tile_split_v },
+	{ XCB_MOD_MASK_4,	XK_o,		wm_tile_next },
+	{ XCB_MOD_MASK_4,	XK_b,		wm_tile_prev },
+	{ XCB_MOD_MASK_4,	XK_s,		wm_tile_destroy },
 };
+
+
+
 
 static void	on_key_press(struct wm *wm, xcb_key_press_event_t *ev);
 static void	on_key_release(struct wm *wm, xcb_key_release_event_t *ev);
@@ -78,7 +81,6 @@ static void	on_colormap_notify(struct wm *wm, xcb_colormap_notify_event_t *ev);
 static void	on_client_message(struct wm *wm, xcb_client_message_event_t *ev);
 static void	on_mapping_notify(struct wm *wm, xcb_mapping_notify_event_t *ev);
 static void	on_ge_generic(struct wm *wm, xcb_ge_generic_event_t *ev);
-
 
 void
 event_grab_keys(struct wm *wm, struct window *screen)
@@ -271,8 +273,9 @@ on_key_press(struct wm *wm, xcb_key_press_event_t *ev)
 	xcb_key_symbols_free(ksyms);
 
 	for (i = 0; (size_t)i < sizeof(keys) / sizeof(struct key); ++i)
-		if (ksym == keys[i].ksym && keys[i].cb)
+		if (ev->state & keys[i].mod && ksym == keys[i].ksym && keys[i].cb) {
 			keys[i].cb(wm, ev->root);
+		}
 }
 
 static void
