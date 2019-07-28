@@ -120,6 +120,7 @@ void		 layout_screen_render(struct wm *wm);
 
 void		 layout_tile_prev(struct wm *wm, xcb_window_t xcb_root);
 void		 layout_tile_next(struct wm *wm, xcb_window_t xcb_root);
+void		 layout_tile_destroy(struct wm *wm, xcb_window_t xcb_root);
 
 void		 layout_frame_prev(struct wm *wm, xcb_window_t xcb_root);
 void		 layout_frame_next(struct wm *wm, xcb_window_t xcb_root);
@@ -166,5 +167,6 @@ void		 wm_run_xeyes(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_tile_split_h(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_tile_split_v(struct wm *wm, xcb_window_t xcb_root);
 
+void		 wm_tile_destroy(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_tile_next(struct wm *wm, xcb_window_t xcb_root);
 void		 wm_tile_prev(struct wm *wm, xcb_window_t xcb_root);
