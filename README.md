@@ -28,6 +28,8 @@ currently implemented
 - notion of current workspace and current tile on each screen
 - attaches X client to the proper place
 - focus is given to a tile either through keyboard shortcuts or by moving cursor
+- event loop implements a tick to update layout even in the lack of events
+
 
 missing
 --
@@ -35,7 +37,6 @@ missing
 - framing inside tiles so that it is possible to iterate between X clients attached to the same tile
 - splitting tiles halves the parent tile, support for resizing should be implemented
 - a cross workspace tile should be implemented, similar to ion's alt-space tile
-- status bar is only updated when layout is redisplayed, a ticker should be set in the event loop with proper multiplexing
 
 
 obligatory screenshots

@@ -15,6 +15,7 @@
  */
 
 #include <err.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,159 +196,178 @@ event_grab_keys(struct wm *wm, struct window *screen)
 	xcb_key_symbols_free(ksyms);
 }
 
+static void
+event_process(struct wm *wm, xcb_generic_event_t *e)
+{
+	switch (e->response_type & ~0x80) {
+	case XCB_KEY_PRESS:
+		on_key_press(wm, (xcb_key_press_event_t *)e);
+		break;
+
+	case XCB_KEY_RELEASE:
+		on_key_release(wm, (xcb_key_release_event_t *)e);
+		break;
+
+	case XCB_BUTTON_PRESS:
+		on_button_press(wm, (xcb_button_press_event_t *)e);
+		break;
+
+	case XCB_BUTTON_RELEASE:
+		on_button_release(wm, (xcb_button_release_event_t *)e);
+		break;
+
+	case XCB_MOTION_NOTIFY:
+		on_motion_notify(wm, (xcb_motion_notify_event_t *)e);
+		break;
+
+	case XCB_ENTER_NOTIFY:
+		on_enter_notify(wm, (xcb_enter_notify_event_t *)e);
+		break;
+
+	case XCB_LEAVE_NOTIFY:
+		on_leave_notify(wm, (xcb_leave_notify_event_t *)e);
+		break;
+
+	case XCB_FOCUS_IN:
+		on_focus_in(wm, (xcb_focus_in_event_t *)e);
+		break;
+
+	case XCB_FOCUS_OUT:
+		on_focus_out(wm, (xcb_focus_out_event_t *)e);
+		break;
+
+	case XCB_KEYMAP_NOTIFY:
+		on_keymap_notify(wm, (xcb_keymap_notify_event_t *)e);
+		break;
+
+	case XCB_EXPOSE:
+		on_expose(wm, (xcb_expose_event_t *)e);
+		break;
+
+	case XCB_GRAPHICS_EXPOSURE:
+		on_graphics_exposure(wm, (xcb_graphics_exposure_event_t *)e);
+		break;
+
+	case XCB_NO_EXPOSURE:
+		on_no_exposure(wm, (xcb_no_exposure_event_t *)e);
+		break;
+
+	case XCB_VISIBILITY_NOTIFY:
+		on_visibility_notify(wm, (xcb_visibility_notify_event_t *)e);
+		break;
+
+	case XCB_CREATE_NOTIFY:
+		on_create_notify(wm, (xcb_create_notify_event_t *)e);
+		break;
+
+	case XCB_DESTROY_NOTIFY:
+		on_destroy_notify(wm, (xcb_destroy_notify_event_t *)e);
+		break;
+
+	case XCB_UNMAP_NOTIFY:
+		on_unmap_notify(wm, (xcb_unmap_notify_event_t *)e);
+		break;
+
+	case XCB_MAP_NOTIFY:
+		on_map_notify(wm, (xcb_map_notify_event_t *)e);
+		break;
+
+	case XCB_MAP_REQUEST:
+		on_map_request(wm, (xcb_map_request_event_t *)e);
+		break;
+
+	case XCB_REPARENT_NOTIFY:
+		on_reparent_notify(wm, (xcb_reparent_notify_event_t *)e);
+		break;
+
+	case XCB_CONFIGURE_NOTIFY:
+		on_configure_notify(wm, (xcb_configure_notify_event_t *)e);
+		break;
+
+	case XCB_CONFIGURE_REQUEST:
+		on_configure_request(wm, (xcb_configure_request_event_t *)e);
+		break;
+
+	case XCB_GRAVITY_NOTIFY:
+		on_gravity_notify(wm, (xcb_gravity_notify_event_t *)e);
+		break;
+
+	case XCB_RESIZE_REQUEST:
+		on_resize_request(wm, (xcb_resize_request_event_t *)e);
+		break;
+
+	case XCB_CIRCULATE_NOTIFY:
+		on_circulate_notify(wm, (xcb_circulate_notify_event_t *)e);
+		break;
+
+	case XCB_CIRCULATE_REQUEST:
+		on_circulate_request(wm, (xcb_circulate_request_event_t *)e);
+		break;
+
+	case XCB_PROPERTY_NOTIFY:
+		on_property_notify(wm, (xcb_property_notify_event_t *)e);
+		break;
+
+	case XCB_SELECTION_CLEAR:
+		on_selection_clear(wm, (xcb_selection_clear_event_t *)e);
+		break;
+
+	case XCB_SELECTION_REQUEST:
+		on_selection_request(wm, (xcb_selection_request_event_t *)e);
+		break;
+
+	case XCB_SELECTION_NOTIFY:
+		on_selection_notify(wm, (xcb_selection_notify_event_t *)e);
+		break;
+
+	case XCB_COLORMAP_NOTIFY:
+		on_colormap_notify(wm, (xcb_colormap_notify_event_t *)e);
+		break;
+
+	case XCB_CLIENT_MESSAGE:
+		on_client_message(wm, (xcb_client_message_event_t *)e);
+		break;
+
+	case XCB_MAPPING_NOTIFY:
+		on_mapping_notify(wm, (xcb_mapping_notify_event_t *)e);
+		break;
+
+	case XCB_GE_GENERIC:
+		on_ge_generic(wm, (xcb_ge_generic_event_t *)e);
+		break;
+
+	case 0:
+	case 1:
+		/* xproto.h documents opcodes starting at 2 */
+		break;
+
+	default:
+		log_warnx("received unknown event \"%d\"", e->response_type & ~0x80);
+	}
+	xcb_flush(wm->conn);
+}
+
 void
 event_loop(struct wm *wm)
 {
-	xcb_generic_event_t	*e;
+	xcb_generic_event_t *e;
+	struct pollfd pfd[1];
+	int nready;
 
+	pfd[0].fd = xcb_get_file_descriptor(wm->conn);
+	pfd[0].events = POLLIN;
 	do {
-		e = xcb_wait_for_event(wm->conn);
-		switch (e->response_type & ~0x80) {
-		case XCB_KEY_PRESS:
-			on_key_press(wm, (xcb_key_press_event_t *)e);
-			break;
+		/* tick every 0.1s */
+		nready = poll(pfd, 1, 1 * 100);
+		if (nready == -1)
+			err(1, "poll");
 
-		case XCB_KEY_RELEASE:
-			on_key_release(wm, (xcb_key_release_event_t *)e);
-			break;
-
-		case XCB_BUTTON_PRESS:
-			on_button_press(wm, (xcb_button_press_event_t *)e);
-			break;
-
-		case XCB_BUTTON_RELEASE:
-			on_button_release(wm, (xcb_button_release_event_t *)e);
-			break;
-
-		case XCB_MOTION_NOTIFY:
-			on_motion_notify(wm, (xcb_motion_notify_event_t *)e);
-			break;
-
-		case XCB_ENTER_NOTIFY:
-			on_enter_notify(wm, (xcb_enter_notify_event_t *)e);
-			break;
-
-		case XCB_LEAVE_NOTIFY:
-			on_leave_notify(wm, (xcb_leave_notify_event_t *)e);
-			break;
-
-		case XCB_FOCUS_IN:
-			on_focus_in(wm, (xcb_focus_in_event_t *)e);
-			break;
-
-		case XCB_FOCUS_OUT:
-			on_focus_out(wm, (xcb_focus_out_event_t *)e);
-			break;
-
-		case XCB_KEYMAP_NOTIFY:
-			on_keymap_notify(wm, (xcb_keymap_notify_event_t *)e);
-			break;
-
-		case XCB_EXPOSE:
-			on_expose(wm, (xcb_expose_event_t *)e);
-			break;
-
-		case XCB_GRAPHICS_EXPOSURE:
-			on_graphics_exposure(wm, (xcb_graphics_exposure_event_t *)e);
-			break;
-
-		case XCB_NO_EXPOSURE:
-			on_no_exposure(wm, (xcb_no_exposure_event_t *)e);
-			break;
-
-		case XCB_VISIBILITY_NOTIFY:
-			on_visibility_notify(wm, (xcb_visibility_notify_event_t *)e);
-			break;
-
-		case XCB_CREATE_NOTIFY:
-			on_create_notify(wm, (xcb_create_notify_event_t *)e);
-			break;
-
-		case XCB_DESTROY_NOTIFY:
-			on_destroy_notify(wm, (xcb_destroy_notify_event_t *)e);
-			break;
-
-		case XCB_UNMAP_NOTIFY:
-			on_unmap_notify(wm, (xcb_unmap_notify_event_t *)e);
-			break;
-
-		case XCB_MAP_NOTIFY:
-			on_map_notify(wm, (xcb_map_notify_event_t *)e);
-			break;
-
-		case XCB_MAP_REQUEST:
-			on_map_request(wm, (xcb_map_request_event_t *)e);
-			break;
-
-		case XCB_REPARENT_NOTIFY:
-			on_reparent_notify(wm, (xcb_reparent_notify_event_t *)e);
-			break;
-
-		case XCB_CONFIGURE_NOTIFY:
-			on_configure_notify(wm, (xcb_configure_notify_event_t *)e);
-			break;
-
-		case XCB_CONFIGURE_REQUEST:
-			on_configure_request(wm, (xcb_configure_request_event_t *)e);
-			break;
-
-		case XCB_GRAVITY_NOTIFY:
-			on_gravity_notify(wm, (xcb_gravity_notify_event_t *)e);
-			break;
-
-		case XCB_RESIZE_REQUEST:
-			on_resize_request(wm, (xcb_resize_request_event_t *)e);
-			break;
-
-		case XCB_CIRCULATE_NOTIFY:
-			on_circulate_notify(wm, (xcb_circulate_notify_event_t *)e);
-			break;
-
-		case XCB_CIRCULATE_REQUEST:
-			on_circulate_request(wm, (xcb_circulate_request_event_t *)e);
-			break;
-
-		case XCB_PROPERTY_NOTIFY:
-			on_property_notify(wm, (xcb_property_notify_event_t *)e);
-			break;
-
-		case XCB_SELECTION_CLEAR:
-			on_selection_clear(wm, (xcb_selection_clear_event_t *)e);
-			break;
-
-		case XCB_SELECTION_REQUEST:
-			on_selection_request(wm, (xcb_selection_request_event_t *)e);
-			break;
-
-		case XCB_SELECTION_NOTIFY:
-			on_selection_notify(wm, (xcb_selection_notify_event_t *)e);
-			break;
-
-		case XCB_COLORMAP_NOTIFY:
-			on_colormap_notify(wm, (xcb_colormap_notify_event_t *)e);
-			break;
-
-		case XCB_CLIENT_MESSAGE:
-			on_client_message(wm, (xcb_client_message_event_t *)e);
-			break;
-
-		case XCB_MAPPING_NOTIFY:
-			on_mapping_notify(wm, (xcb_mapping_notify_event_t *)e);
-			break;
-
-		case XCB_GE_GENERIC:
-			on_ge_generic(wm, (xcb_ge_generic_event_t *)e);
-			break;
-
-		case 0:
-		case 1:
-			/* xproto.h documents opcodes starting at 2 */
-			break;
-
-		default:
-			log_warnx("received unknown event \"%d\"", e->response_type & ~0x80);
+		if (nready) {
+			while ((e = xcb_poll_for_event(wm->conn)) != NULL) {
+				event_process(wm, e);
+				free(e);
+			}
 		}
-		free (e);
 		layout_update(wm);
 		xcb_flush(wm->conn);
 	} while (running);
