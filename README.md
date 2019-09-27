@@ -41,5 +41,5 @@ missing
 
 obligatory screenshots
 --
-![1](https://poolp.org/theme/images/2019-06-30-fion_1.png)
-![2](https://poolp.org/theme/images/2019-06-30-fion_2.png)
+![1](https://poolp.org/images/2019-06-30-fion_1.png)
+![2](https://poolp.org/images/2019-06-30-fion_2.png)
