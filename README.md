@@ -33,6 +33,7 @@ currently implemented
 
 missing
 --
+- window management should work when focus is on a terminal, hijacking key strokes
 - tiles management is not finished: creating / splitting / iterating works fine but destroying breaks the layout
 - framing inside tiles so that it is possible to iterate between X clients attached to the same tile
 - splitting tiles halves the parent tile, support for resizing should be implemented
