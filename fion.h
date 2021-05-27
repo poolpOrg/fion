@@ -38,14 +38,14 @@ enum split {
 };
 
 enum window_type {
-        WT_SCREEN,
+	WT_SCREEN,
 	WT_STATUSBAR,
-        WT_WORKAREA,
-        WT_WORKSPACE,
-        WT_TILEFORK,
-        WT_TILE,
-        WT_FRAME,
-        WT_CLIENT,
+	WT_WORKAREA,
+	WT_WORKSPACE,
+	WT_TILEFORK,
+	WT_TILE,
+	WT_FRAME,
+	WT_CLIENT,
 };
 
 struct wm {
@@ -72,13 +72,13 @@ struct window {
 	uint64_t		winid;
 	uint64_t		objid;
 
-        enum window_type        type;
+	enum window_type        type;
 
-        int                     x;
-        int                     y;
-        int                     width;
-        int                     height;
-	int			border_width;
+    int	x;
+    int	y;
+    int	width;
+    int	height;
+	int	border_width;
 
 	struct tree		children;
 

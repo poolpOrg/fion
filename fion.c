@@ -70,8 +70,10 @@ main(int argc, char *argv[])
 	fion_init(&wm);
 	fion_setup(&wm);
 
+#if 0
 	if (pledge("stdio proc exec", NULL) == -1)
 		err(1, "pledge");
+#endif
 
 	event_loop(&wm);
 
