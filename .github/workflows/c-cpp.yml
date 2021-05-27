@@ -13,5 +13,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Install xmllint
+      run: sudo apt-get install xorg-dev
     - name: make
       run: make
