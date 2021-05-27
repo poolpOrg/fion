@@ -13,7 +13,7 @@ OBJS=	$(SRCS:.c=.o)
 
 BINDIR=		/usr/local/bin
 
-LDADD+=		-L/usr/X11R6/lib -lxcb -lxcb-keysyms -lxcb-icccm
+LDADD+=		-L/usr/X11R6/lib -L/usr/lib/x86_64-linux-gnu -lxcb -lxcb-keysyms -lxcb-icccm
 
 CFLAGS+=	-I.
 CFLAGS+=	-I/usr/X11R6/include
