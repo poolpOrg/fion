@@ -87,7 +87,7 @@ fion_init(struct wm *wm)
 {
 	wm->conn = xcb_connect(NULL, NULL);
 	if (xcb_connection_has_error(wm->conn))
-		err(1, "xcb_connect", NULL);
+		err(1, "xcb_connect");
 }
 
 static void
