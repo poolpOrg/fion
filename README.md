@@ -3,6 +3,8 @@ repository for the fion window manager
 
 **THIS IS A WORK IN PROGRESS, IT IS NOT WORKING YET !**
 
+![fion](https://poolp.org/posts/2019-08-25/august-2019-report-fion-plakar-and-opensmtpd/cover.jpg)
+
 description
 --
 fion is a static tiling window manager inspired by ion.
