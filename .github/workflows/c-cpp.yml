@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Install xmllint
-      run: sudo apt-get install xorg-dev libxcb-icccm4-dev
+    - name: Install xorg dependencies
+      run: sudo apt-get install xorg-dev libxcb-icccm4-dev libxcb-keysyms1-dev
     - name: make
       run: make
