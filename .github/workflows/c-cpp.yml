@@ -14,6 +14,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install xmllint
-      run: sudo apt-get install xorg-dev
+      run: sudo apt-get install xorg-dev libxcb-icccm4-dev
     - name: make
       run: make
