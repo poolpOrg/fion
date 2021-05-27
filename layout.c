@@ -71,6 +71,8 @@ static xcb_gc_t gc_font_get (struct wm *wm, struct window *window, const char *f
 static void text_draw (struct wm *wm, struct window *window, int16_t x1, int16_t y1, const char *label);
 /**/
 
+void
+layout_debug(struct wm *wm, struct window *window, int depth);
 
 /* layout initialization */
 void
@@ -947,7 +949,7 @@ layout_tile_destroy(struct wm *wm, xcb_window_t xcb_root)
 	 */
 	log_debug("----------");
 	layout_debug(wm, NULL, 0);
-	log_debug("");
+	log_debug("-");
 }
 
 void
