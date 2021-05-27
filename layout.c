@@ -885,7 +885,7 @@ layout_tile_split(struct wm *wm, xcb_window_t xcb_root, enum split direction)
 	 */
 	log_debug("----------");
 	layout_debug(wm, NULL, 0);
-	log_debug("");
+	log_debug("-");
 }
 
 void
@@ -1068,4 +1068,5 @@ window_type_name(struct window *window)
 	case WT_FRAME:
 		return "frame";
 	}
+	return "<UNKNOWN>";
 }
