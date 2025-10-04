@@ -1,0 +1,62 @@
+package main
+
+import (
+	"os"
+	"strconv"
+
+	"github.com/BurntSushi/xgb"
+	"github.com/BurntSushi/xgb/xproto"
+)
+
+// -------------------------- Keys & Modifiers --------------------------
+
+const Key_1 = xproto.Keycode(26)
+const Key_2 = xproto.Keycode(27)
+const Key_3 = xproto.Keycode(28)
+const Key_4 = xproto.Keycode(29)
+const Key_5 = xproto.Keycode(30)
+const Key_6 = xproto.Keycode(31)
+const Key_7 = xproto.Keycode(32)
+const Key_8 = xproto.Keycode(33)
+const Key_9 = xproto.Keycode(34)
+const Key_0 = xproto.Keycode(35)
+
+const KeyQ = 0x51
+const Key_D = xproto.Keycode(10)
+const Key_F2 = xproto.Keycode(128)
+const Key_F9 = xproto.Keycode(109)
+
+const Key_LeftArrow = xproto.Keycode(131)
+const Key_RightArrow = xproto.Keycode(132)
+
+const KeyCMD = xproto.Keycode(63)
+
+func detectKeycodeQ(X *xgb.Conn) xproto.Keycode {
+	if v := os.Getenv("WM_KEYCODE_Q"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return xproto.Keycode(n)
+		}
+	}
+	rep, err := xproto.GetKeyboardMapping(X, 8, 248).Reply()
+	if err == nil {
+		width := int(rep.KeysymsPerKeycode)
+		for i, ks := range rep.Keysyms {
+			if ks == KeyQ {
+				return 8 + xproto.Keycode(i/width)
+			}
+		}
+	}
+	return xproto.Keycode(24)
+}
+
+func detectNumLockMask(_ *xgb.Conn) uint16 { return xproto.ModMask2 }
+
+func (wm *WM) grabKey(win xproto.Window, mods uint16, key xproto.Keycode) error {
+	locks := []uint16{0, xproto.ModMaskLock, wm.NumLock, xproto.ModMaskLock | wm.NumLock}
+	for _, m := range locks {
+		if err := xproto.GrabKeyChecked(wm.X, true, win, mods|m, key, xproto.GrabModeAsync, xproto.GrabModeAsync).Check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
