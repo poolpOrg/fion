@@ -22,9 +22,9 @@ func (wm *WM) tryManage(w xproto.Window) {
 	if attr.OverrideRedirect {
 		return
 	}
-	//	if attr.MapState == xproto.MapStateUnmapped {
-	//		return
-	//	}
+	if attr.MapState == xproto.MapStateUnmapped {
+		return
+	}
 	fmt.Printf("Managing existing window %d\n", w)
 	wm.manageWindow(w)
 }
@@ -34,12 +34,12 @@ func (wm *WM) manageWindow(win xproto.Window) {
 		return
 	}
 
-	// Make a frame for client
+	// Make a tab for client
 	bw := uint32(1)
-	frame, _ := xproto.NewWindowId(wm.X)
+	tab, _ := xproto.NewWindowId(wm.X)
 
 	activeWorkspace := wm.ActiveWorkspace()
-	parentId := activeWorkspace.Area
+	parentId := activeWorkspace.GetActiveFrame().Window
 
 	geom, err := xproto.GetGeometry(wm.X, xproto.Drawable(parentId)).Reply()
 	if err != nil {
@@ -48,7 +48,7 @@ func (wm *WM) manageWindow(win xproto.Window) {
 	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
 
 	xproto.CreateWindow(
-		wm.X, wm.Scr.RootDepth, frame, parentId,
+		wm.X, wm.Scr.RootDepth, tab, parentId,
 		0, 0,
 		geom.Width, geom.Height, 0,
 		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
@@ -59,66 +59,56 @@ func (wm *WM) manageWindow(win xproto.Window) {
 			xproto.EventMaskButtonPress | xproto.EventMaskButtonRelease | xproto.EventMaskPointerMotion,
 		},
 	)
-	xproto.ConfigureWindow(wm.X, frame, xproto.ConfigWindowBorderWidth, []uint32{bw})
+	xproto.ConfigureWindow(wm.X, tab, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.X, xproto.SetModeInsert, win)
-	xproto.ReparentWindow(wm.X, win, frame, 0, 0)
-	xproto.MapWindow(wm.X, frame)
+	xproto.ReparentWindow(wm.X, win, tab, 0, 0)
+	xproto.MapWindow(wm.X, tab)
 	xproto.MapWindow(wm.X, win)
 
-	cl := &Client{Win: win, Frame: frame}
+	cl := &Client{Win: win, Tab: tab}
 	wm.Clients[win] = cl
 
+	activeWorkspace.GetActiveFrame().AddTab(win)
+
 	// Attach to active Leaf as a new tab
-	ws := wm.ActiveWorkspace()
-	leaf := ws.FocusedFrame
-	if leaf == nil {
-		leaf = ws.Root
-	}
-	if leaf.Kind != Leaf { // create a leaf if focus isn't a leaf
-		leaf = &FrameNode{Kind: Leaf, Parent: leaf, Tabs: nil, Active: -1, G: leaf.G}
-		leaf.Parent.Children = append(leaf.Parent.Children, leaf)
-	}
-	leaf.Tabs = append(leaf.Tabs, win)
-	leaf.Active = len(leaf.Tabs) - 1
-	wm.Frames[frame] = leaf
-
 	wm.updateClientList()
-	wm.layoutWorkspace(ws)
+	// wm.layoutWorkspace(ws)
 }
 
-func (wm *WM) unmanageWindow(win xproto.Window) {
-	cl, ok := wm.Clients[win]
-	if !ok {
-		return
-	}
-	ws := wm.ActiveWorkspace()
-	// Remove from leaf tabs
-	if leaf, ok := wm.Frames[cl.Frame]; ok {
-		idx := -1
-		for i, w := range leaf.Tabs {
-			if w == win {
-				idx = i
-				break
-			}
+/*
+	func (wm *WM) unmanageWindow(win xproto.Window) {
+		cl, ok := wm.Clients[win]
+		if !ok {
+			return
 		}
-		if idx >= 0 {
-			leaf.Tabs = append(leaf.Tabs[:idx], leaf.Tabs[idx+1:]...)
-			if leaf.Active >= len(leaf.Tabs) {
-				leaf.Active = len(leaf.Tabs) - 1
+		ws := wm.ActiveWorkspace()
+		// Remove from leaf tabs
+		if leaf, ok := wm.Frames[cl.Frame]; ok {
+			idx := -1
+			for i, w := range leaf.Tabs {
+				if w == win {
+					idx = i
+					break
+				}
 			}
+			if idx >= 0 {
+				leaf.Tabs = append(leaf.Tabs[:idx], leaf.Tabs[idx+1:]...)
+				if leaf.Active >= len(leaf.Tabs) {
+					leaf.Active = len(leaf.Tabs) - 1
+				}
+			}
+			delete(wm.Frames, cl.Frame)
 		}
-		delete(wm.Frames, cl.Frame)
+		// Unparent and destroy frame
+		xproto.UnmapWindow(wm.X, cl.Frame)
+		xproto.ReparentWindow(wm.X, cl.Win, wm.Root, 0, 0)
+		xproto.DestroyWindow(wm.X, cl.Frame)
+		delete(wm.Clients, win)
+
+		wm.updateClientList()
+		wm.layoutWorkspace(ws)
 	}
-	// Unparent and destroy frame
-	xproto.UnmapWindow(wm.X, cl.Frame)
-	xproto.ReparentWindow(wm.X, cl.Win, wm.Root, 0, 0)
-	xproto.DestroyWindow(wm.X, cl.Frame)
-	delete(wm.Clients, win)
-
-	wm.updateClientList()
-	wm.layoutWorkspace(ws)
-}
-
+*/
 func (wm *WM) updateClientList() {
 	buf := make([]byte, 0, 4*len(wm.Clients))
 	for w := range wm.Clients {

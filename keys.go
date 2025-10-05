@@ -28,6 +28,8 @@ const Key_F9 = xproto.Keycode(109)
 
 const Key_LeftArrow = xproto.Keycode(131)
 const Key_RightArrow = xproto.Keycode(132)
+const Key_UpArrow = xproto.Keycode(134)
+const Key_DownArrow = xproto.Keycode(133)
 
 const KeyCMD = xproto.Keycode(63)
 

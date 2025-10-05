@@ -31,7 +31,7 @@ type WM struct {
 	Clients map[xproto.Window]*Client
 
 	// Frame lookup by window id (frame -> leaf)
-	Frames map[xproto.Window]*FrameNode
+	Frames map[xproto.Window]*Frame
 
 	Focused *Client
 
@@ -61,7 +61,7 @@ func NewWM() (*WM, error) {
 		Root:    scr.Root,
 		Atoms:   getAtoms(conn),
 		NumLock: detectNumLockMask(conn),
-		Frames:  make(map[xproto.Window]*FrameNode),
+		Frames:  make(map[xproto.Window]*Frame),
 		Clients: make(map[xproto.Window]*Client),
 	}
 
@@ -143,13 +143,7 @@ func (wm *WM) Run() error {
 			// If the expose is for a workspace bar, redraw its label
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
-					txt := fmt.Sprintf("%s", time.Now().Format(time.RFC1123))
-					// Clear the bar area (optional)
-					xproto.PolyFillRectangle(wm.X, xproto.Drawable(ws.Bar), ws.BarGC,
-						[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
-					xproto.ImageText8(wm.X, byte(len(txt)), xproto.Drawable(ws.Bar), ws.BarGC, 10, 13, txt)
-					//						wm.drawWorkspaceLabel(ws
-
+					ws.updateInfoBar()
 				}
 			}
 			time.Sleep(1 * time.Second)
@@ -166,26 +160,21 @@ func (wm *WM) Run() error {
 			// If the expose is for a workspace bar, redraw its label
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
-					if ev.Window == ws.Bar {
-						txt := fmt.Sprintf("%s", time.Now().Format(time.RFC1123))
-						// Clear the bar area (optional)
-						xproto.PolyFillRectangle(wm.X, xproto.Drawable(ws.Bar), ws.BarGC,
-							[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
-						xproto.ImageText8(wm.X, byte(len(txt)), xproto.Drawable(ws.Bar), ws.BarGC, 10, 13, txt)
-						//						wm.drawWorkspaceLabel(ws
+					if ev.Window == ws.InfoBar {
+						ws.updateInfoBar()
 					}
 				}
 			}
 		case xproto.MapRequestEvent:
 			fmt.Printf("MapRequest: win=%d\n", ev.Window)
-			wm.tryManage(ev.Window)
 			xproto.MapWindow(wm.X, ev.Window)
+			wm.tryManage(ev.Window)
 		case xproto.ConfigureRequestEvent:
-			wm.handleConfigure(ev)
+			//wm.handleConfigure(ev)
 		case xproto.DestroyNotifyEvent:
-			wm.unmanageWindow(ev.Window)
+			//wm.unmanageWindow(ev.Window)
 		case xproto.UnmapNotifyEvent:
-			wm.unmanageWindow(ev.Window)
+			//wm.unmanageWindow(ev.Window)
 		case xproto.KeyPressEvent:
 			mods := ev.State & (xproto.ModMask1 | xproto.ModMask2 | xproto.ModMask3 | xproto.ModMask4 | xproto.ModMaskControl | xproto.ModMaskShift)
 
@@ -225,6 +214,15 @@ func (wm *WM) Run() error {
 						new.Map()
 						old.Unmap()
 					}
+
+				case Key_UpArrow:
+					fmt.Println("SplitV", wm.ActiveScreen().ActiveWorkspace().GetActiveFrame())
+					wm.ActiveScreen().ActiveWorkspace().splitV()
+
+				case Key_DownArrow:
+					fmt.Println("SplitH", wm.ActiveScreen().ActiveWorkspace().GetActiveFrame())
+					wm.ActiveScreen().ActiveWorkspace().splitH()
+
 				}
 			}
 
@@ -259,7 +257,7 @@ func (wm *WM) Run() error {
 				}
 			*/
 		case xproto.ClientMessageEvent:
-			wm.handleClientMessage(ev)
+			//wm.handleClientMessage(ev)
 		}
 	}
 }
