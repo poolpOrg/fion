@@ -26,12 +26,12 @@ func newScreen(wm *WM, scr xproto.ScreenInfo) (*Screen, error) {
 	return screen, nil
 }
 
-func (sc *Screen) Geom() Rect {
+func (sc *Screen) Geometry() Rect {
 	scr := sc.ScreenInfo
 	return Rect{0, 0, uint16(scr.WidthInPixels), uint16(scr.HeightInPixels)}
 }
 
-func (sc *Screen) ActiveWorkspace() *Workspace {
+func (sc *Screen) GetActiveWorkspace() *Workspace {
 	if sc.activeWorkspaceIdx < 0 || sc.activeWorkspaceIdx >= len(sc.Workspaces) {
 		return nil
 	}
@@ -63,7 +63,7 @@ func (sc *Screen) removeWorkspace() {
 		return
 	}
 
-	old := sc.ActiveWorkspace()
+	old := sc.GetActiveWorkspace()
 	new := sc.cycleWorkspaceRight()
 
 	workspaces := []*Workspace{}

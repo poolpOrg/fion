@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -81,7 +82,7 @@ func NewWM() (*WM, error) {
 	xproto.ChangeWindowAttributes(wm.X, wm.Root, xproto.CwBackPixel, []uint32{wm.ColNormal})
 	xproto.ClearArea(wm.X, false, wm.Root, 0, 0, wm.Scr.WidthInPixels, wm.Scr.HeightInPixels)
 
-	setDefaultCursor(conn, wm.Root)
+	//setDefaultCursor(conn, wm.Root)
 
 	if err := wm.initEWMH(); err != nil {
 		return nil, err
@@ -113,19 +114,27 @@ func (wm *WM) initScreens() error {
 	return nil
 }
 
-func (wm *WM) ActiveScreen() *Screen {
+func (wm *WM) GetActiveScreen() *Screen {
 	if len(wm.Screens) == 0 {
 		return nil
 	}
 	return wm.Screens[0]
 }
 
-func (wm *WM) ActiveWorkspace() *Workspace {
-	sc := wm.ActiveScreen()
+func (wm *WM) GetActiveWorkspace() *Workspace {
+	sc := wm.GetActiveScreen()
 	if sc == nil {
 		return nil
 	}
-	return sc.ActiveWorkspace()
+	return sc.GetActiveWorkspace()
+}
+
+func (wm *WM) GetActiveFrame() *Frame {
+	sc := wm.GetActiveScreen()
+	if sc == nil {
+		return nil
+	}
+	return sc.GetActiveWorkspace().GetActiveFrame()
 }
 
 func (wm *WM) Run() error {
@@ -144,6 +153,9 @@ func (wm *WM) Run() error {
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
 					ws.updateInfoBar()
+					for _, f := range ws.Root.Children {
+						f.updateTitleBar()
+					}
 				}
 			}
 			time.Sleep(1 * time.Second)
@@ -160,14 +172,13 @@ func (wm *WM) Run() error {
 			// If the expose is for a workspace bar, redraw its label
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
-					if ev.Window == ws.InfoBar {
+					if ev.Window == ws.InfoBarWindow {
 						ws.updateInfoBar()
 					}
+					ws.updateTitleBars()
 				}
 			}
 		case xproto.MapRequestEvent:
-			fmt.Printf("MapRequest: win=%d\n", ev.Window)
-			xproto.MapWindow(wm.X, ev.Window)
 			wm.tryManage(ev.Window)
 		case xproto.ConfigureRequestEvent:
 			//wm.handleConfigure(ev)
@@ -180,11 +191,11 @@ func (wm *WM) Run() error {
 
 			log.Printf("KeyPressed: %d %d", ev.Detail, mods)
 			if ev.Detail == Key_F9 && mods == xproto.ModMask2 {
-				screen := wm.ActiveScreen()
+				screen := wm.GetActiveScreen()
 				if screen == nil {
 					continue
 				}
-				old := wm.ActiveScreen().ActiveWorkspace()
+				old := wm.GetActiveWorkspace()
 				ws, err := screen.newWorkspace()
 				if err != nil {
 					log.Printf("newWorkspace: %v", err)
@@ -194,35 +205,73 @@ func (wm *WM) Run() error {
 				old.Unmap()
 			}
 
+			if mods == xproto.ModMaskShift {
+				switch ev.Detail {
+				case Key_LeftArrow:
+					wm.GetActiveWorkspace().cycleFrameLeft()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
+				case Key_RightArrow:
+					wm.GetActiveWorkspace().cycleFrameRight()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
+				case Key_UpArrow:
+					wm.GetActiveFrame().cycleClientLeft()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
+				case Key_DownArrow:
+					wm.GetActiveFrame().cycleClientRight()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
+				}
+			}
+
 			if mods == xproto.ModMask2 {
 				switch ev.Detail {
 				case Key_D:
-					wm.ActiveScreen().removeWorkspace()
+					wm.GetActiveScreen().removeWorkspace()
 
 				case Key_LeftArrow:
-					old := wm.ActiveScreen().ActiveWorkspace()
-					new := wm.ActiveScreen().cycleWorkspaceLeft()
+					old := wm.GetActiveWorkspace()
+					new := wm.GetActiveScreen().cycleWorkspaceLeft()
 					if old != nil && old != new {
 						new.Map()
 						old.Unmap()
 					}
 
 				case Key_RightArrow:
-					old := wm.ActiveScreen().ActiveWorkspace()
-					new := wm.ActiveScreen().cycleWorkspaceRight()
+					old := wm.GetActiveWorkspace()
+					new := wm.GetActiveScreen().cycleWorkspaceRight()
 					if old != nil && old != new {
 						new.Map()
 						old.Unmap()
 					}
 
 				case Key_UpArrow:
-					fmt.Println("SplitV", wm.ActiveScreen().ActiveWorkspace().GetActiveFrame())
-					wm.ActiveScreen().ActiveWorkspace().splitV()
+					wm.GetActiveWorkspace().splitV()
 
 				case Key_DownArrow:
-					fmt.Println("SplitH", wm.ActiveScreen().ActiveWorkspace().GetActiveFrame())
-					wm.ActiveScreen().ActiveWorkspace().splitH()
+					wm.GetActiveWorkspace().splitH()
 
+				}
+			}
+
+			if mods == 0 {
+				switch ev.Detail {
+				case Key_F2:
+					exec.Command("xterm", "-bg", "black", "-fg", "white").Start()
 				}
 			}
 

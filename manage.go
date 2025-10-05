@@ -6,11 +6,16 @@ import (
 	"github.com/BurntSushi/xgb/xproto"
 )
 
+type Rect struct {
+	X, Y int16
+	W, H uint16
+}
+
 func (wm *WM) manageExistingWindows() {
 	tree, _ := xproto.QueryTree(wm.X, wm.Root).Reply()
 	for _, win := range tree.Children {
 		//wm.tryManage(win)
-		fmt.Println("Existing window:", win)
+		_ = win
 	}
 }
 
@@ -22,10 +27,9 @@ func (wm *WM) tryManage(w xproto.Window) {
 	if attr.OverrideRedirect {
 		return
 	}
-	if attr.MapState == xproto.MapStateUnmapped {
+	if attr.MapState != xproto.MapStateUnmapped {
 		return
 	}
-	fmt.Printf("Managing existing window %d\n", w)
 	wm.manageWindow(w)
 }
 
@@ -36,9 +40,8 @@ func (wm *WM) manageWindow(win xproto.Window) {
 
 	// Make a tab for client
 	bw := uint32(1)
-	tab, _ := xproto.NewWindowId(wm.X)
 
-	activeWorkspace := wm.ActiveWorkspace()
+	activeWorkspace := wm.GetActiveWorkspace()
 	parentId := activeWorkspace.GetActiveFrame().Window
 
 	geom, err := xproto.GetGeometry(wm.X, xproto.Drawable(parentId)).Reply()
@@ -47,25 +50,23 @@ func (wm *WM) manageWindow(win xproto.Window) {
 	}
 	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
 
-	xproto.CreateWindow(
-		wm.X, wm.Scr.RootDepth, tab, parentId,
-		0, 0,
-		geom.Width, geom.Height, 0,
-		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
-		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
-		[]uint32{
-			wm.Scr.BlackPixel,
-			wm.ColNormal, // <-- random border color
-			xproto.EventMaskButtonPress | xproto.EventMaskButtonRelease | xproto.EventMaskPointerMotion,
-		},
-	)
-	xproto.ConfigureWindow(wm.X, tab, xproto.ConfigWindowBorderWidth, []uint32{bw})
+	xproto.ConfigureWindow(wm.X, win, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.X, xproto.SetModeInsert, win)
-	xproto.ReparentWindow(wm.X, win, tab, 0, 0)
-	xproto.MapWindow(wm.X, tab)
+	xproto.ReparentWindow(wm.X, win, parentId, 0, 20)
+
+	mask := uint16(xproto.ConfigWindowX |
+		xproto.ConfigWindowY |
+		xproto.ConfigWindowWidth |
+		xproto.ConfigWindowHeight)
+	vals := []uint32{0, 22, uint32(geom.Width), uint32(geom.Height) - 22}
+	xproto.ConfigureWindow(wm.X, win, mask, vals)
+
+	//xproto.ChangeWindowAttributes(wm.X, win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})
+	//xproto.ConfigureWindow(wm.X, win, xproto.ConfigWindowBorderWidth, []uint32{1})
+
 	xproto.MapWindow(wm.X, win)
 
-	cl := &Client{Win: win, Tab: tab}
+	cl := &Client{Win: win}
 	wm.Clients[win] = cl
 
 	activeWorkspace.GetActiveFrame().AddTab(win)

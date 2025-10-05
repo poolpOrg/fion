@@ -1,12 +1,6 @@
 package main
 
-import (
-	"math"
-
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
-)
-
+/*
 func setDefaultCursor(X *xgb.Conn, win xproto.Window) {
 	const cursorLeftPtr = 68
 	fid, _ := xproto.NewFontId(X)
@@ -19,7 +13,7 @@ func setDefaultCursor(X *xgb.Conn, win xproto.Window) {
 
 func (wm *WM) beginDragMove(cl *Client, start xproto.ButtonPressEvent) {
 	rootStartX, rootStartY := int16(start.RootX), int16(start.RootY)
-	geom, _ := xproto.GetGeometry(wm.X, xproto.Drawable(cl.Tab)).Reply()
+	geom, _ := xproto.GetGeometry(wm.X, xproto.Drawable(cl.Win)).Reply()
 	fx0, fy0 := int16(geom.X), int16(geom.Y)
 	wm.grabPointer(wm.Root)
 	for {
@@ -31,7 +25,7 @@ func (wm *WM) beginDragMove(cl *Client, start xproto.ButtonPressEvent) {
 		case xproto.MotionNotifyEvent:
 			dx := int16(e.RootX) - rootStartX
 			dy := int16(e.RootY) - rootStartY
-			xproto.ConfigureWindow(wm.X, cl.Tab, xproto.ConfigWindowX|xproto.ConfigWindowY,
+			xproto.ConfigureWindow(wm.X, cl.Win, xproto.ConfigWindowX|xproto.ConfigWindowY,
 				[]uint32{uint32(int16(fx0 + dx)), uint32(int16(fy0 + dy))})
 		case xproto.ButtonReleaseEvent:
 			wm.ungrabPointer()
@@ -43,7 +37,7 @@ func (wm *WM) beginDragMove(cl *Client, start xproto.ButtonPressEvent) {
 
 func (wm *WM) beginDragResize(cl *Client, start xproto.ButtonPressEvent) {
 	rootStartX, rootStartY := int16(start.RootX), int16(start.RootY)
-	geom, _ := xproto.GetGeometry(wm.X, xproto.Drawable(cl.Tab)).Reply()
+	geom, _ := xproto.GetGeometry(wm.X, xproto.Drawable(cl.Win)).Reply()
 	fw0, fh0 := int16(geom.Width), int16(geom.Height)
 	wm.grabPointer(wm.Root)
 	for {
@@ -57,7 +51,7 @@ func (wm *WM) beginDragResize(cl *Client, start xproto.ButtonPressEvent) {
 			dy := int16(e.RootY) - rootStartY
 			w := uint32(math.Max(50, float64(fw0+dx)))
 			h := uint32(math.Max(50, float64(fh0+dy)))
-			xproto.ConfigureWindow(wm.X, cl.Tab, xproto.ConfigWindowWidth|xproto.ConfigWindowHeight, []uint32{w, h})
+			xproto.ConfigureWindow(wm.X, cl.Win, xproto.ConfigWindowWidth|xproto.ConfigWindowHeight, []uint32{w, h})
 		case xproto.ButtonReleaseEvent:
 			wm.ungrabPointer()
 			return
@@ -70,3 +64,4 @@ func (wm *WM) grabPointer(root xproto.Window) {
 	xproto.GrabPointer(wm.X, false, root, xproto.EventMaskButtonRelease|xproto.EventMaskPointerMotion, xproto.GrabModeAsync, xproto.GrabModeAsync, root, 0, xproto.TimeCurrentTime)
 }
 func (wm *WM) ungrabPointer() { xproto.UngrabPointer(wm.X, xproto.TimeCurrentTime) }
+*/
