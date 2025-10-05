@@ -286,3 +286,22 @@ func (wm *WM) focusClient(cl *Client) {
 	wm.Focused = cl
 }
 */
+
+func (wm *WM) layoutWorkspace(ws *Workspace) {
+	// total screen geom
+	g := ws.Screen.Geom()
+	// leave space for the bar
+	below := Rect{X: g.X, Y: g.Y + int16(BarHeight), W: g.W, H: g.H - BarHeight}
+
+	// position bar (in case of resize)
+	xproto.ConfigureWindow(
+		wm.X, ws.Bar,
+		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
+		[]uint32{uint32(g.X), uint32(g.Y), uint32(g.W), uint32(BarHeight)},
+	)
+	xproto.MapWindow(wm.X, ws.Bar)
+
+	// assign and apply layout for tiling area
+	assignRect(ws.Root, below)
+	wm.applyLayout(ws.Root)
+}

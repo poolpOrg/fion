@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/randr"
@@ -39,12 +40,71 @@ type WM struct {
 
 }
 
+func NewWM() (*WM, error) {
+	conn, err := xgb.NewConn()
+	if err != nil {
+		return nil, err
+	}
+
+	setup := xproto.Setup(conn)
+	if setup == nil || len(setup.Roots) == 0 {
+		conn.Close()
+		return nil, fmt.Errorf("no X screens found")
+	}
+
+	scr := setup.DefaultScreen(conn)
+	wm := &WM{
+		X:     conn,
+		Setup: setup,
+
+		Scr:     scr,
+		Root:    scr.Root,
+		Atoms:   getAtoms(conn),
+		NumLock: detectNumLockMask(conn),
+		Frames:  make(map[xproto.Window]*FrameNode),
+		Clients: make(map[xproto.Window]*Client),
+	}
+
+	mask := uint32(
+		xproto.EventMaskSubstructureRedirect |
+			xproto.EventMaskSubstructureNotify |
+			xproto.EventMaskPropertyChange |
+			xproto.EventMaskButtonPress |
+			xproto.EventMaskButtonRelease |
+			xproto.EventMaskPointerMotion |
+			xproto.EventMaskKeyPress,
+	)
+	if err := xproto.ChangeWindowAttributesChecked(conn, wm.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("another WM running: %w", err)
+	}
+	xproto.ChangeWindowAttributes(wm.X, wm.Root, xproto.CwBackPixel, []uint32{wm.ColNormal})
+	xproto.ClearArea(wm.X, false, wm.Root, 0, 0, wm.Scr.WidthInPixels, wm.Scr.HeightInPixels)
+
+	setDefaultCursor(conn, wm.Root)
+
+	if err := wm.initEWMH(); err != nil {
+		return nil, err
+	}
+
+	wm.initScreens()
+	wm.manageExistingWindows()
+
+	return wm, nil
+}
+
+func (wm *WM) Close() {
+	if wm.X != nil {
+		wm.X.Close()
+	}
+}
+
 func (wm *WM) initScreens() error {
 	if err := randr.Init(wm.X); err != nil {
 		return err
 	}
-	for si, scr := range xproto.Setup(wm.X).Roots {
-		screen, err := newScreen(wm, si, scr)
+	for _, scr := range xproto.Setup(wm.X).Roots {
+		screen, err := newScreen(wm, scr)
 		if err != nil {
 			return err
 		}
@@ -78,6 +138,24 @@ func (wm *WM) Run() error {
 	go func() { <-done; os.Exit(0) }()
 	log.Printf("fion running on %q — Alt+Q quits", os.Getenv("DISPLAY"))
 
+	go func() {
+		for {
+			// If the expose is for a workspace bar, redraw its label
+			for _, s := range wm.Screens {
+				for _, ws := range s.Workspaces {
+					txt := fmt.Sprintf("%s", time.Now().Format(time.RFC1123))
+					// Clear the bar area (optional)
+					xproto.PolyFillRectangle(wm.X, xproto.Drawable(ws.Bar), ws.BarGC,
+						[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
+					xproto.ImageText8(wm.X, byte(len(txt)), xproto.Drawable(ws.Bar), ws.BarGC, 10, 13, txt)
+					//						wm.drawWorkspaceLabel(ws
+
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	for {
 		e, err := wm.X.WaitForEvent()
 		if err != nil {
@@ -89,7 +167,12 @@ func (wm *WM) Run() error {
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
 					if ev.Window == ws.Bar {
-						//						wm.drawWorkspaceLabel(ws)
+						txt := fmt.Sprintf("%s", time.Now().Format(time.RFC1123))
+						// Clear the bar area (optional)
+						xproto.PolyFillRectangle(wm.X, xproto.Drawable(ws.Bar), ws.BarGC,
+							[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
+						xproto.ImageText8(wm.X, byte(len(txt)), xproto.Drawable(ws.Bar), ws.BarGC, 10, 13, txt)
+						//						wm.drawWorkspaceLabel(ws
 					}
 				}
 			}
@@ -112,13 +195,14 @@ func (wm *WM) Run() error {
 				if screen == nil {
 					continue
 				}
+				old := wm.ActiveScreen().ActiveWorkspace()
 				ws, err := screen.newWorkspace()
 				if err != nil {
 					log.Printf("newWorkspace: %v", err)
 					continue
 				}
-				_ = ws
-				log.Printf("CREATE NEW WORKSPACE: %d %d", ev.Detail, mods)
+				ws.Map()
+				old.Unmap()
 			}
 
 			if mods == xproto.ModMask2 {

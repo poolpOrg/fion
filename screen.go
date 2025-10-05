@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/BurntSushi/xgb/xproto"
 )
 
@@ -14,7 +12,7 @@ type Screen struct {
 	activeWorkspaceIdx int
 }
 
-func newScreen(wm *WM, id int, scr xproto.ScreenInfo) (*Screen, error) {
+func newScreen(wm *WM, scr xproto.ScreenInfo) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
 		ScreenInfo: scr,
@@ -23,6 +21,7 @@ func newScreen(wm *WM, id int, scr xproto.ScreenInfo) (*Screen, error) {
 		return nil, err
 	} else {
 		screen.Workspaces = []*Workspace{ws0}
+		ws0.Map()
 	}
 	return screen, nil
 }
@@ -51,13 +50,11 @@ func (sc *Screen) newWorkspace() (*Workspace, error) {
 
 func (sc *Screen) cycleWorkspaceLeft() *Workspace {
 	sc.activeWorkspaceIdx = (sc.activeWorkspaceIdx + len(sc.Workspaces) - 1) % len(sc.Workspaces)
-	fmt.Println("Switched to workspace", sc.activeWorkspaceIdx)
 	return sc.Workspaces[sc.activeWorkspaceIdx]
 }
 
 func (sc *Screen) cycleWorkspaceRight() *Workspace {
 	sc.activeWorkspaceIdx = (sc.activeWorkspaceIdx + 1) % len(sc.Workspaces)
-	fmt.Println("Switched to workspace", sc.activeWorkspaceIdx)
 	return sc.Workspaces[sc.activeWorkspaceIdx]
 }
 
@@ -75,8 +72,6 @@ func (sc *Screen) removeWorkspace() {
 			workspaces = append(workspaces, w)
 		}
 	}
-
-	fmt.Println("Removed workspace", old, "now active is", new, "index", sc.activeWorkspaceIdx)
 
 	sc.Workspaces = workspaces
 

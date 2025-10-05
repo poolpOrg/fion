@@ -3,73 +3,14 @@ package main
 import (
 	"fmt"
 
-	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 )
-
-func NewWM() (*WM, error) {
-	conn, err := xgb.NewConn()
-	if err != nil {
-		return nil, err
-	}
-
-	setup := xproto.Setup(conn)
-	if setup == nil || len(setup.Roots) == 0 {
-		conn.Close()
-		return nil, fmt.Errorf("no X screens found")
-	}
-
-	scr := setup.DefaultScreen(conn)
-	wm := &WM{
-		X:     conn,
-		Setup: setup,
-
-		Scr:     scr,
-		Root:    scr.Root,
-		Atoms:   getAtoms(conn),
-		NumLock: detectNumLockMask(conn),
-		Frames:  make(map[xproto.Window]*FrameNode),
-		Clients: make(map[xproto.Window]*Client),
-	}
-
-	mask := uint32(
-		xproto.EventMaskSubstructureRedirect |
-			xproto.EventMaskSubstructureNotify |
-			xproto.EventMaskPropertyChange |
-			xproto.EventMaskButtonPress |
-			xproto.EventMaskButtonRelease |
-			xproto.EventMaskPointerMotion |
-			xproto.EventMaskKeyPress,
-	)
-	if err := xproto.ChangeWindowAttributesChecked(conn, wm.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("another WM running: %w", err)
-	}
-	xproto.ChangeWindowAttributes(wm.X, wm.Root, xproto.CwBackPixel, []uint32{wm.ColNormal})
-	xproto.ClearArea(wm.X, false, wm.Root, 0, 0, wm.Scr.WidthInPixels, wm.Scr.HeightInPixels)
-
-	setDefaultCursor(conn, wm.Root)
-
-	if err := wm.initEWMH(); err != nil {
-		return nil, err
-	}
-
-	wm.initScreens()
-
-	return wm, nil
-}
 
 func (wm *WM) manageExistingWindows() {
 	tree, _ := xproto.QueryTree(wm.X, wm.Root).Reply()
 	for _, win := range tree.Children {
-		wm.tryManage(win)
-		//fmt.Println("Existing window:", win)
-	}
-}
-
-func (wm *WM) Close() {
-	if wm.X != nil {
-		wm.X.Close()
+		//wm.tryManage(win)
+		fmt.Println("Existing window:", win)
 	}
 }
 
@@ -184,23 +125,4 @@ func (wm *WM) updateClientList() {
 		buf = append(buf, byte(w), byte(w>>8), byte(w>>16), byte(w>>24))
 	}
 	xproto.ChangeProperty(wm.X, xproto.PropModeReplace, wm.Root, wm.Atoms.NET_CLIENT_LIST, xproto.AtomWindow, 32, uint32(len(buf)/4), buf)
-}
-
-func (wm *WM) layoutWorkspace(ws *Workspace) {
-	// total screen geom
-	g := ws.Screen.Geom()
-	// leave space for the bar
-	below := Rect{X: g.X, Y: g.Y + int16(BarHeight), W: g.W, H: g.H - BarHeight}
-
-	// position bar (in case of resize)
-	xproto.ConfigureWindow(
-		wm.X, ws.Bar,
-		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
-		[]uint32{uint32(g.X), uint32(g.Y), uint32(g.W), uint32(BarHeight)},
-	)
-	xproto.MapWindow(wm.X, ws.Bar)
-
-	// assign and apply layout for tiling area
-	assignRect(ws.Root, below)
-	wm.applyLayout(ws.Root)
 }

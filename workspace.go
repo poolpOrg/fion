@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/BurntSushi/xgb/xproto"
 )
 
@@ -21,8 +19,6 @@ type Workspace struct {
 	Area xproto.Window
 
 	BarGC xproto.Gcontext // optional, for text
-	// BarBgPixel uint32
-	// BarFgPixel uint32
 }
 
 func newWorkspace(screen *Screen) (*Workspace, error) {
@@ -59,13 +55,87 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 		},
 	)
 
-	xproto.MapWindow(wm.X, w)
+	ws.setupLayout()
 
 	return ws, nil
 }
 
-func (ws *Workspace) String() string {
-	return fmt.Sprintf("Workspace{Root:%p, FocusedFrame:%p}", ws.Root, ws.FocusedFrame)
+func (ws *Workspace) setupLayout() error {
+	if err := ws.setupInfoBar(); err != nil {
+		return err
+	}
+	if err := ws.setupWorkArea(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ws *Workspace) setupInfoBar() error {
+	wm := ws.Screen.wm
+	geom := ws.Screen.Geom()
+
+	w, err := xproto.NewWindowId(wm.X)
+	if err != nil {
+		return err
+	}
+
+	xproto.CreateWindow(
+		wm.X, wm.Scr.RootDepth, w, ws.Ws,
+		geom.X, int16(ws.Screen.ScreenInfo.HeightInPixels)-20, // Position at the bottom
+		geom.W, 20, // Adjust height for top and bottom borders
+		ws.BorderWidth, // Set border width to 1px
+		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
+		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
+		[]uint32{
+			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Color, // Set the border color
+			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
+		},
+	)
+	ws.Bar = w
+
+	// Create a GC and set a core font
+	gc, _ := xproto.NewGcontextId(wm.X)
+	xproto.CreateGC(wm.X, gc, xproto.Drawable(ws.Bar),
+		xproto.GcForeground|xproto.GcBackground, []uint32{
+			ws.Screen.ScreenInfo.WhitePixel, // text color
+			ws.Screen.ScreenInfo.BlackPixel, // bg (unused by ImageText8)
+		},
+	)
+	// Load a core font and bind it to the GC
+	fid, _ := xproto.NewFontId(wm.X)
+	_ = xproto.OpenFontChecked(wm.X, fid, uint16(len("fixed")), "fixed").Check()
+	xproto.ChangeGC(wm.X, gc, xproto.GcFont, []uint32{uint32(fid)})
+	ws.BarGC = gc
+
+	return nil
+}
+
+func (ws *Workspace) setupWorkArea() error {
+	wm := ws.Screen.wm
+	geom := ws.Screen.Geom()
+
+	w, err := xproto.NewWindowId(wm.X)
+	if err != nil {
+		return err
+	}
+
+	xproto.CreateWindow(
+		wm.X, wm.Scr.RootDepth, w, ws.Ws,
+		geom.X, geom.Y, // Position at the bottom
+		geom.W-(2*ws.BorderWidth), uint16(ws.Screen.ScreenInfo.HeightInPixels)-20-(2*ws.BorderWidth), // Adjust height for top and bottom borders
+		ws.BorderWidth, // Set border width to 1px
+		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
+		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
+		[]uint32{
+			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Color, // Set the border color
+			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
+		},
+	)
+	ws.Area = w
+
+	return nil
 }
 
 func (ws *Workspace) Map() {
@@ -81,6 +151,9 @@ func (ws *Workspace) Map() {
 			}
 		}
 	})
+	xproto.MapWindow(ws.Wm.X, ws.Bar)
+	xproto.MapWindow(ws.Wm.X, ws.Area)
+	xproto.MapWindow(ws.Wm.X, ws.Ws)
 }
 
 func (ws *Workspace) Unmap() {
@@ -96,14 +169,9 @@ func (ws *Workspace) Unmap() {
 			}
 		}
 	})
-}
-
-func (ws *Workspace) Visible() {
-	ws.Wm.ActiveWorkspace().Unmap()
-	ws.Wm.ActiveWorkspace().FocusedFrame = nil
-	ws.Wm.ActiveWorkspace().FocusedFrame = ws.FocusedFrame
-	ws.Map()
-	ws.Wm.layoutWorkspace(ws)
+	xproto.UnmapWindow(ws.Wm.X, ws.Area)
+	xproto.UnmapWindow(ws.Wm.X, ws.Bar)
+	xproto.UnmapWindow(ws.Wm.X, ws.Ws)
 }
 
 func (ws *Workspace) Destroy() {
