@@ -7,19 +7,19 @@ import (
 	"github.com/BurntSushi/xgb/xproto"
 )
 
-func (wm *WM) randomColor() uint32 {
+func (s *Screen) randomColor() uint32 {
 	r := uint8(rand.Intn(256)) // Random value between 0-255
 	g := uint8(rand.Intn(256))
 	b := uint8(rand.Intn(256))
-	return wm.allocColorRGB8(r, g, b)
+	return s.allocColorRGB8(r, g, b)
 }
 
-func (wm *WM) allocColorRGB8(r8, g8, b8 uint8) uint32 {
+func (s *Screen) allocColorRGB8(r8, g8, b8 uint8) uint32 {
 	r := uint16(r8) * 0x101
 	g := uint16(g8) * 0x101
 	b := uint16(b8) * 0x101
-	cm := wm.Scr.DefaultColormap
-	rep, err := xproto.AllocColor(wm.X, cm, r, g, b).Reply()
+	cm := s.ScreenInfo.DefaultColormap
+	rep, err := xproto.AllocColor(s.wm.Conn(), cm, r, g, b).Reply()
 	if err != nil {
 		return 0
 	}

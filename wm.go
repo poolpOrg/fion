@@ -15,30 +15,19 @@ import (
 )
 
 type WM struct {
-	X *xgb.Conn
-
+	xConn   *xgb.Conn
 	Setup   *xproto.SetupInfo
 	Screens []*Screen
 
-	Scr   *xproto.ScreenInfo
-	Root  xproto.Window
 	Atoms Atoms
 
 	NumLock uint16
 
-	SupportingWin xproto.Window
+	//	SupportingWin xproto.Window
 
 	// Clients by window id
-	Clients map[xproto.Window]*Client
-
-	// Frame lookup by window id (frame -> leaf)
-	Frames map[xproto.Window]*Frame
-
-	Focused *Client
-
-	ColFocused uint32 // pixel
-	ColNormal  uint32 // pixelq1
-
+	Clients map[xproto.Window]struct{}
+	Frames  map[xproto.Window]*Frame
 }
 
 func NewWM() (*WM, error) {
@@ -53,58 +42,38 @@ func NewWM() (*WM, error) {
 		return nil, fmt.Errorf("no X screens found")
 	}
 
-	scr := setup.DefaultScreen(conn)
 	wm := &WM{
-		X:     conn,
+		xConn: conn,
 		Setup: setup,
 
-		Scr:     scr,
-		Root:    scr.Root,
 		Atoms:   getAtoms(conn),
-		NumLock: detectNumLockMask(conn),
 		Frames:  make(map[xproto.Window]*Frame),
-		Clients: make(map[xproto.Window]*Client),
+		Clients: make(map[xproto.Window]struct{}),
 	}
 
-	mask := uint32(
-		xproto.EventMaskSubstructureRedirect |
-			xproto.EventMaskSubstructureNotify |
-			xproto.EventMaskPropertyChange |
-			xproto.EventMaskButtonPress |
-			xproto.EventMaskButtonRelease |
-			xproto.EventMaskPointerMotion |
-			xproto.EventMaskKeyPress,
-	)
-	if err := xproto.ChangeWindowAttributesChecked(conn, wm.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("another WM running: %w", err)
-	}
-	xproto.ChangeWindowAttributes(wm.X, wm.Root, xproto.CwBackPixel, []uint32{wm.ColNormal})
-	xproto.ClearArea(wm.X, false, wm.Root, 0, 0, wm.Scr.WidthInPixels, wm.Scr.HeightInPixels)
-
-	//setDefaultCursor(conn, wm.Root)
-
-	if err := wm.initEWMH(); err != nil {
+	if err := wm.initScreens(); err != nil {
+		wm.Close()
 		return nil, err
 	}
-
-	wm.initScreens()
-	wm.manageExistingWindows()
 
 	return wm, nil
 }
 
+func (wm *WM) Conn() *xgb.Conn {
+	return wm.xConn
+}
+
 func (wm *WM) Close() {
-	if wm.X != nil {
-		wm.X.Close()
+	if wm.xConn != nil {
+		wm.xConn.Close()
 	}
 }
 
 func (wm *WM) initScreens() error {
-	if err := randr.Init(wm.X); err != nil {
+	if err := randr.Init(wm.xConn); err != nil {
 		return err
 	}
-	for _, scr := range xproto.Setup(wm.X).Roots {
+	for _, scr := range xproto.Setup(wm.xConn).Roots {
 		screen, err := newScreen(wm, scr)
 		if err != nil {
 			return err
@@ -137,9 +106,15 @@ func (wm *WM) GetActiveFrame() *Frame {
 	return sc.GetActiveWorkspace().GetActiveFrame()
 }
 
+func (wm *WM) GetActiveClient() xproto.Window {
+	return wm.GetActiveFrame().GetActiveClient()
+}
+
 func (wm *WM) Run() error {
-	// Keybinding: Alt+Q to quit
-	_ = wm.grabKey(wm.Root, xproto.ModMask1, KeyQ)
+	for _, scr := range wm.Screens {
+		_ = wm.grabKey(scr.ScreenInfo.Root, xproto.ModMask1, Key_D)
+		_ = wm.grabKey(scr.ScreenInfo.Root, xproto.ModMask1, Key_Q)
+	}
 
 	// Signals
 	done := make(chan os.Signal, 1)
@@ -153,9 +128,7 @@ func (wm *WM) Run() error {
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
 					ws.updateInfoBar()
-					for _, f := range ws.Root.Children {
-						f.updateTitleBar()
-					}
+					ws.updateTitleBars()
 				}
 			}
 			time.Sleep(1 * time.Second)
@@ -163,7 +136,7 @@ func (wm *WM) Run() error {
 	}()
 
 	for {
-		e, err := wm.X.WaitForEvent()
+		e, err := wm.xConn.WaitForEvent()
 		if err != nil {
 			return fmt.Errorf("WaitForEvent: %w", err)
 		}
@@ -205,8 +178,25 @@ func (wm *WM) Run() error {
 				old.Unmap()
 			}
 
-			if mods == xproto.ModMaskShift {
+			if mods == xproto.ModMask2 {
 				switch ev.Detail {
+				case Key_D:
+					frame := wm.GetActiveFrame()
+					client := wm.GetActiveClient()
+					if client != 0 {
+						frame.RemoveClient(client)
+						wm.unmanageWindow(client)
+					} else if frame.GetParent() != nil {
+						parent := frame.GetParent()
+						parent.RemoveChild(frame)
+					} else {
+						wm.GetActiveScreen().removeWorkspace()
+					}
+
+					//frame := wm.GetActiveFrame()
+
+				//	wm.GetActiveFrame().removeActiveClient()
+
 				case Key_LeftArrow:
 					wm.GetActiveWorkspace().cycleFrameLeft()
 					for _, s := range wm.Screens {
@@ -238,7 +228,7 @@ func (wm *WM) Run() error {
 				}
 			}
 
-			if mods == xproto.ModMask2 {
+			if mods == xproto.ModMask2|xproto.ModMaskShift {
 				switch ev.Detail {
 				case Key_D:
 					wm.GetActiveScreen().removeWorkspace()

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/BurntSushi/xgb/xproto"
 )
 
@@ -17,6 +19,27 @@ func newScreen(wm *WM, scr xproto.ScreenInfo) (*Screen, error) {
 		wm:         wm,
 		ScreenInfo: scr,
 	}
+
+	mask := uint32(
+		xproto.EventMaskSubstructureRedirect |
+			xproto.EventMaskSubstructureNotify |
+			xproto.EventMaskPropertyChange |
+			xproto.EventMaskButtonPress |
+			xproto.EventMaskButtonRelease |
+			xproto.EventMaskPointerMotion |
+			xproto.EventMaskKeyPress,
+	)
+	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), scr.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
+		return nil, fmt.Errorf("another WM running: %w", err)
+	}
+
+	xproto.ChangeWindowAttributes(wm.Conn(), scr.Root, xproto.CwBackPixel, []uint32{scr.BlackPixel})
+	xproto.ClearArea(wm.Conn(), false, scr.Root, 0, 0, scr.WidthInPixels, scr.HeightInPixels)
+
+	if err := screen.initEWMH(); err != nil {
+		return nil, err
+	}
+
 	if ws0, err := newWorkspace(screen); err != nil {
 		return nil, err
 	} else {
@@ -81,4 +104,23 @@ func (sc *Screen) removeWorkspace() {
 
 	new.Map()
 	old.Destroy()
+}
+
+func (s *Screen) initEWMH() error {
+	wm := s.wm
+	X, A := wm.Conn(), wm.Atoms
+	w, err := xproto.NewWindowId(X)
+	if err != nil {
+		return err
+	}
+	xproto.CreateWindow(wm.Conn(), s.ScreenInfo.RootDepth, w, s.ScreenInfo.Root, 0, 0, 1, 1, 0,
+		xproto.WindowClassInputOutput, s.ScreenInfo.RootVisual, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
+	//wm.SupportingWin = w
+	wm.setProp32(s.ScreenInfo.Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	wm.setProp32(w, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	wm.setPropStr(w, A.NET_WM_NAME, A.UTF8_STRING, "fion")
+	supported := []xproto.Atom{A.NET_SUPPORTED, A.NET_SUPPORTING_WM_CHECK, A.NET_CLIENT_LIST, A.NET_ACTIVE_WINDOW}
+	wm.setPropAtoms(s.ScreenInfo.Root, A.NET_SUPPORTED, supported)
+	//wm.updateClientList()
+	return nil
 }

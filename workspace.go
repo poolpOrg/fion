@@ -29,7 +29,7 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 	wm := screen.wm
 	geom := screen.Geometry()
 
-	w, err := xproto.NewWindowId(wm.X)
+	w, err := xproto.NewWindowId(wm.Conn())
 	if err != nil {
 		return nil, err
 	}
@@ -37,16 +37,16 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 	ws := &Workspace{
 		Manager:         screen.wm,
 		Screen:          screen,
-		Color:           wm.randomColor(),
+		Color:           0x424242,
 		WorkspaceWindow: w,
 	}
 
 	xproto.CreateWindow(
-		wm.X, wm.Scr.RootDepth, w, wm.Root,
+		wm.Conn(), screen.ScreenInfo.RootDepth, w, screen.ScreenInfo.Root,
 		geom.X, geom.Y,
 		geom.W, geom.H, // Adjust height for top and bottom borders
 		0, // Set border width to 1px
-		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
+		xproto.WindowClassInputOutput, screen.ScreenInfo.RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
 			ws.Color,
@@ -60,7 +60,7 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 }
 
 func (ws *Workspace) Conn() *xgb.Conn {
-	return ws.Manager.X
+	return ws.Manager.Conn()
 }
 
 func (ws *Workspace) setupLayout() error {
@@ -77,17 +77,17 @@ func (ws *Workspace) setupInfoBar() error {
 	wm := ws.Screen.wm
 	geom := ws.Screen.Geometry()
 
-	w, err := xproto.NewWindowId(wm.X)
+	w, err := xproto.NewWindowId(wm.Conn())
 	if err != nil {
 		return err
 	}
 
 	xproto.CreateWindow(
-		ws.Conn(), wm.Scr.RootDepth, w, ws.WorkspaceWindow,
+		ws.Conn(), ws.Screen.ScreenInfo.RootDepth, w, ws.WorkspaceWindow,
 		geom.X, int16(ws.Screen.ScreenInfo.HeightInPixels)-20, // Position at the bottom
 		geom.W-(2), 20-2, // Adjust height for top and bottom borders
 		1, // Set border width to 1px
-		xproto.WindowClassInputOutput, wm.Scr.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
 			ws.Screen.ScreenInfo.BlackPixel,
@@ -155,9 +155,9 @@ func (ws *Workspace) Map() {
 			}
 		})
 	*/
-	xproto.MapWindow(ws.Manager.X, ws.InfoBarWindow)
+	xproto.MapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
 	ws.Root.Map()
-	xproto.MapWindow(ws.Manager.X, ws.WorkspaceWindow)
+	xproto.MapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
 
 func (ws *Workspace) Unmap() {
@@ -176,8 +176,8 @@ func (ws *Workspace) Unmap() {
 		})
 	*/
 	ws.Root.Unmap()
-	xproto.UnmapWindow(ws.Manager.X, ws.InfoBarWindow)
-	xproto.UnmapWindow(ws.Manager.X, ws.WorkspaceWindow)
+	xproto.UnmapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
+	xproto.UnmapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
 
 func (ws *Workspace) Destroy() {
@@ -194,7 +194,7 @@ func (ws *Workspace) Destroy() {
 			}
 		})
 	*/
-	xproto.DestroyWindow(ws.Manager.X, ws.WorkspaceWindow)
+	xproto.DestroyWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
 
 func (ws *Workspace) updateInfoBar() {
@@ -216,32 +216,30 @@ func (ws *Workspace) updateInfoBar() {
 
 	clock := time.Now().Format(time.RFC1123)
 
-	xproto.ClearArea(ws.Manager.X, false, ws.InfoBarWindow, 0, 0, 0, 0)
-
-	txt := fmt.Sprintf("[%d:%d]", screenOffset, wsOffset)
-	// Clear the bar area (optional)
-	xproto.PolyFillRectangle(ws.Manager.X, xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC,
+	xproto.PolyFillRectangle(ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC,
 		[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
-	xproto.ImageText8(ws.Manager.X, byte(len(txt)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 5, 14, txt)
-	xproto.ImageText8(ws.Manager.X, byte(len(clock)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, int16(ws.Screen.Geometry().W)-200, 14, clock)
 
 	// get the CPU and memory usage
 	ressources := []string{}
+	numCpus, _ := cpu.Counts(true)
+
 	cpuPercents, err := cpu.Percent(0, false)
 	if err == nil && len(cpuPercents) > 0 {
-		ressources = append(ressources, fmt.Sprintf("CPU: %.02f%%", cpuPercents[0]))
+		ressources = append(ressources, fmt.Sprintf("CPU: % 4.02f%% (%d cores)", cpuPercents[0], numCpus))
 	}
 
 	memPercents, err := mem.VirtualMemory()
 	if err == nil {
-		ressources = append(ressources, fmt.Sprintf("MEM: %s/%s",
-			humanize.IBytes(memPercents.Used), humanize.IBytes(memPercents.Total)))
+		ressources = append(ressources, fmt.Sprintf("MEM: % 4s / % 4s (%.02f%%)",
+			humanize.IBytes(memPercents.Used), humanize.IBytes(memPercents.Total),
+			memPercents.UsedPercent))
 	}
 
-	ressources = append(ressources, fmt.Sprintf("active frame: %p", ws.ActiveFrame))
+	infotext := fmt.Sprintf("FION | [%02x:%02x] | ", screenOffset, wsOffset) + strings.Join(ressources, " | ")
+	xproto.ClearArea(ws.Manager.Conn(), false, ws.InfoBarWindow, 0, 0, 0, 0)
+	xproto.ImageText8(ws.Manager.Conn(), byte(len(infotext)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 5, 14, infotext)
+	xproto.ImageText8(ws.Manager.Conn(), byte(len(clock)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, int16(ws.Screen.Geometry().W)-190, 14, clock)
 
-	ressourcesStr := strings.Join(ressources, " | ")
-	xproto.ImageText8(ws.Manager.X, byte(len(ressourcesStr)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 40, 14, ressourcesStr)
 }
 
 func (ws *Workspace) updateTitleBars() {
@@ -255,14 +253,14 @@ func (ws *Workspace) GetActiveFrame() *Frame {
 }
 
 func (ws *Workspace) cycleFrameLeft() {
-	if ws.Root.Leaf {
+	if ws.Root.Leaf() {
 		return
 	}
 
 	frames := []*Frame{}
 	i := 0
 	walk(ws.Root, func(f *Frame) {
-		if !f.Leaf {
+		if !f.Leaf() {
 			return
 		}
 		if f == ws.ActiveFrame {
@@ -276,14 +274,14 @@ func (ws *Workspace) cycleFrameLeft() {
 }
 
 func (ws *Workspace) cycleFrameRight() {
-	if ws.Root.Leaf {
+	if ws.Root.Leaf() {
 		return
 	}
 
 	frames := []*Frame{}
 	i := 0
 	walk(ws.Root, func(f *Frame) {
-		if !f.Leaf {
+		if !f.Leaf() {
 			return
 		}
 		if f == ws.ActiveFrame {

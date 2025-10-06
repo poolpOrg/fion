@@ -1,10 +1,6 @@
 package main
 
 import (
-	"os"
-	"strconv"
-
-	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 )
 
@@ -21,7 +17,7 @@ const Key_8 = xproto.Keycode(33)
 const Key_9 = xproto.Keycode(34)
 const Key_0 = xproto.Keycode(35)
 
-const KeyQ = 0x51
+const Key_Q = 0x51
 const Key_D = xproto.Keycode(10)
 const Key_F2 = xproto.Keycode(128)
 const Key_F9 = xproto.Keycode(109)
@@ -33,30 +29,10 @@ const Key_DownArrow = xproto.Keycode(133)
 
 const KeyCMD = xproto.Keycode(63)
 
-func detectKeycodeQ(X *xgb.Conn) xproto.Keycode {
-	if v := os.Getenv("WM_KEYCODE_Q"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return xproto.Keycode(n)
-		}
-	}
-	rep, err := xproto.GetKeyboardMapping(X, 8, 248).Reply()
-	if err == nil {
-		width := int(rep.KeysymsPerKeycode)
-		for i, ks := range rep.Keysyms {
-			if ks == KeyQ {
-				return 8 + xproto.Keycode(i/width)
-			}
-		}
-	}
-	return xproto.Keycode(24)
-}
-
-func detectNumLockMask(_ *xgb.Conn) uint16 { return xproto.ModMask2 }
-
 func (wm *WM) grabKey(win xproto.Window, mods uint16, key xproto.Keycode) error {
 	locks := []uint16{0, xproto.ModMaskLock, wm.NumLock, xproto.ModMaskLock | wm.NumLock}
 	for _, m := range locks {
-		if err := xproto.GrabKeyChecked(wm.X, true, win, mods|m, key, xproto.GrabModeAsync, xproto.GrabModeAsync).Check(); err != nil {
+		if err := xproto.GrabKeyChecked(wm.Conn(), true, win, mods|m, key, xproto.GrabModeAsync, xproto.GrabModeAsync).Check(); err != nil {
 			return err
 		}
 	}
