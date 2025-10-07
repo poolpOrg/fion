@@ -23,8 +23,6 @@ type WM struct {
 
 	NumLock uint16
 
-	//	SupportingWin xproto.Window
-
 	// Clients by window id
 	Clients map[xproto.Window]struct{}
 	Frames  map[xproto.Window]*Frame
