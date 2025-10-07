@@ -155,7 +155,9 @@ func (ws *Workspace) Map() {
 			}
 		})
 	*/
-	xproto.MapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
+	if ws.InfoBarWindow != 0 {
+		xproto.MapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
+	}
 	ws.Root.Map()
 	xproto.MapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
@@ -176,7 +178,9 @@ func (ws *Workspace) Unmap() {
 		})
 	*/
 	ws.Root.Unmap()
-	xproto.UnmapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
+	if ws.InfoBarWindow != 0 {
+		xproto.UnmapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
+	}
 	xproto.UnmapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
 
@@ -235,7 +239,7 @@ func (ws *Workspace) updateInfoBar() {
 			memPercents.UsedPercent))
 	}
 
-	infotext := fmt.Sprintf("FION | [%02x:%02x] | ", screenOffset, wsOffset) + strings.Join(ressources, " | ")
+	infotext := fmt.Sprintf("FION | [%02x:%02x/%02x] | ", screenOffset+1, wsOffset+1, len(ws.Screen.Workspaces)-1) + strings.Join(ressources, " | ")
 	xproto.ClearArea(ws.Manager.Conn(), false, ws.InfoBarWindow, 0, 0, 0, 0)
 	xproto.ImageText8(ws.Manager.Conn(), byte(len(infotext)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 5, 14, infotext)
 	xproto.ImageText8(ws.Manager.Conn(), byte(len(clock)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, int16(ws.Screen.Geometry().W)-190, 14, clock)

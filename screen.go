@@ -8,9 +8,10 @@ import (
 
 // Screen holds multiple workspaces and active WS index.
 type Screen struct {
-	wm                 *WM
-	ScreenInfo         xproto.ScreenInfo
-	Workspaces         []*Workspace
+	wm         *WM
+	ScreenInfo xproto.ScreenInfo
+	Workspaces []*Workspace
+
 	activeWorkspaceIdx int
 }
 

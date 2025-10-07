@@ -18,9 +18,19 @@ const Key_9 = xproto.Keycode(34)
 const Key_0 = xproto.Keycode(35)
 
 const Key_Q = 0x51
+const Key_C = xproto.Keycode(16)
 const Key_D = xproto.Keycode(10)
+const Key_H = xproto.Keycode(12)
+const Key_V = xproto.Keycode(17)
+const Key_W = xproto.Keycode(21)
+
+const Key_Space = xproto.Keycode(57)
+
+const Key_F1 = xproto.Keycode(130)
 const Key_F2 = xproto.Keycode(128)
 const Key_F9 = xproto.Keycode(109)
+
+const Key_BackQuote = xproto.Keycode(58)
 
 const Key_LeftArrow = xproto.Keycode(131)
 const Key_RightArrow = xproto.Keycode(132)

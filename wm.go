@@ -112,6 +112,7 @@ func (wm *WM) GetActiveClient() xproto.Window {
 
 func (wm *WM) Run() error {
 	for _, scr := range wm.Screens {
+		_ = wm.grabKey(scr.ScreenInfo.Root, xproto.ModMask4, Key_BackQuote)
 		_ = wm.grabKey(scr.ScreenInfo.Root, xproto.ModMask1, Key_D)
 		_ = wm.grabKey(scr.ScreenInfo.Root, xproto.ModMask1, Key_Q)
 	}
@@ -196,6 +197,10 @@ func (wm *WM) Run() error {
 					//frame := wm.GetActiveFrame()
 
 				//	wm.GetActiveFrame().removeActiveClient()
+				case Key_H:
+					wm.GetActiveWorkspace().splitH()
+				case Key_V:
+					wm.GetActiveWorkspace().splitV()
 
 				case Key_LeftArrow:
 					wm.GetActiveWorkspace().cycleFrameLeft()
@@ -230,6 +235,20 @@ func (wm *WM) Run() error {
 
 			if mods == xproto.ModMask2|xproto.ModMaskShift {
 				switch ev.Detail {
+				case Key_W:
+					screen := wm.GetActiveScreen()
+					if screen == nil {
+						continue
+					}
+					old := wm.GetActiveWorkspace()
+					ws, err := screen.newWorkspace()
+					if err != nil {
+						log.Printf("newWorkspace: %v", err)
+						continue
+					}
+					ws.Map()
+					old.Unmap()
+
 				case Key_D:
 					wm.GetActiveScreen().removeWorkspace()
 
@@ -249,51 +268,51 @@ func (wm *WM) Run() error {
 						old.Unmap()
 					}
 
-				case Key_UpArrow:
-					wm.GetActiveWorkspace().splitV()
-
-				case Key_DownArrow:
-					wm.GetActiveWorkspace().splitH()
-
+				case Key_Space:
+					fmt.Println("TODO: SCRATCHPAD")
 				}
 			}
 
 			if mods == 0 {
 				switch ev.Detail {
+				case Key_F1:
+					fmt.Println("TODO: browser")
+
 				case Key_F2:
 					exec.Command("xterm", "-bg", "black", "-fg", "white").Start()
+
 				}
 			}
 
 		case xproto.ButtonPressEvent:
-			/*
-				// Focus on click; Alt+Left move, Alt+Right resize on frame
-				if leaf := wm.Frames[ev.Event]; leaf != nil {
-					wm.ActiveWorkspace().FocusedFrame = leaf
-				}
-				if ev.State&xproto.ModMask1 != 0 {
-					if ev.Detail == 1 {
-						if cl := wm.clientByFrame(ev.Event); cl != nil {
-							wm.beginDragMove(cl, ev)
-						}
-					}
-					if ev.Detail == 3 {
-						if cl := wm.clientByFrame(ev.Event); cl != nil {
-							wm.beginDragResize(cl, ev)
-						}
+			/*z
+			// Focus on click; Alt+Left move, Alt+Right resize on frame
+			if leaf := wm.Frames[ev.Event]; leaf != nil {
+				wm.ActiveWorkspace().FocusedFrame = leaf
+			}
+			if ev.State&xproto.ModMask1 != 0 {
+				if ev.Detail == 1 {
+					if cl := wm.clientByFrame(ev.Event); cl != nil {
+						wm.beginDragMove(cl, ev)
 					}
 				}
-				for si, s := range wm.Screens {
-					for wi, ws := range s.Workspaces {
-						if ev.Event == ws.Bar {
-							dprintf("bar click screen=%d ws=%d button=%d at (%d,%d)", si, wi, ev.Detail, ev.EventX, ev.EventY)
-							// Evxample: left-click cycles tabs
-							if ev.Detail == 1 {
-								wm.FocusNextTab()
-							}
+				if ev.Detail == 3 {
+					if cl := wm.clientByFrame(ev.Event); cl != nil {
+						wm.beginDragResize(cl, ev)
+					}
+				}
+			}
+			for si, s := range wm.Screens {
+				for wi, ws := range s.Workspaces {
+					if ev.Event == ws.Bar {
+						dprintf("bar click screen=%d ws=%d button=%d at (%d,%d)", si, wi, ev.Detail, ev.EventX, ev.EventY)
+						// Evxample: left-click cycles tabs
+						if ev.Detail == 1 {
+							wm.FocusNextTab()
 						}
 					}
 				}
+			}
 			*/
 		case xproto.ClientMessageEvent:
 			//wm.handleClientMessage(ev)
