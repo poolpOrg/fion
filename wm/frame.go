@@ -17,7 +17,7 @@ type Frame struct {
 	clients      []xproto.Window // for Leaf: client windows (tab order)
 	activeClient int             // index into Tabs
 
-	g        Rect // assigned geometry during layout
+	g        Geometry // assigned geometry during layout
 	titleBar xproto.Window
 	barGC    xproto.Gcontext
 
@@ -32,7 +32,7 @@ func newRootFrame(ws *Workspace) (*Frame, error) {
 		return nil, err
 	}
 
-	frameGeom := Rect{
+	frameGeom := Geometry{
 		X: 0,
 		Y: 0,
 		W: geom.W,
@@ -147,7 +147,7 @@ func (f *Frame) Destroy() {
 	xproto.DestroyWindow(f.Conn(), f.window)
 }
 
-func (f *Frame) split(geom1, geom2 Rect) error {
+func (f *Frame) split(geom1, geom2 Geometry) error {
 	ws := f.workspace
 
 	f1W, err := xproto.NewWindowId(f.Conn())
@@ -240,13 +240,13 @@ func (f *Frame) splitH() error {
 	}
 
 	halfH := f.g.H / 2
-	topGeom := Rect{
+	topGeom := Geometry{
 		X: 0,
 		Y: 0,
 		W: f.g.W,
 		H: halfH,
 	}
-	bottomGeom := Rect{
+	bottomGeom := Geometry{
 		X: 0,
 		Y: int16(halfH),
 		W: f.g.W,
@@ -260,13 +260,13 @@ func (f *Frame) splitV() error {
 		return fmt.Errorf("frame too small to split")
 	}
 	halfW := f.g.W / 2
-	leftGeom := Rect{
+	leftGeom := Geometry{
 		X: 0,
 		Y: 0,
 		W: halfW,
 		H: f.g.H,
 	}
-	rightGeom := Rect{
+	rightGeom := Geometry{
 		X: int16(halfW),
 		Y: 0,
 		W: halfW,

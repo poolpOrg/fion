@@ -55,7 +55,7 @@ func NewManager() (*Manager, error) {
 	return wm, nil
 }
 
-type Rect struct {
+type Geometry struct {
 	X, Y int16
 	W, H uint16
 }

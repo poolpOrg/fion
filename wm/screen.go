@@ -91,8 +91,8 @@ func (s *Screen) Conn() *xgb.Conn {
 	return s.wm.Conn()
 }
 
-func (s *Screen) Geometry() Rect {
-	return Rect{0, 0, uint16(s.Info().WidthInPixels), uint16(s.Info().HeightInPixels)}
+func (s *Screen) Geometry() Geometry {
+	return Geometry{0, 0, uint16(s.Info().WidthInPixels), uint16(s.Info().HeightInPixels)}
 }
 
 func (s *Screen) Info() xproto.ScreenInfo {
