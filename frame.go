@@ -35,7 +35,7 @@ func newRootFrame(ws *Workspace) (*Frame, error) {
 	frameGeom := Rect{
 		X: 0,
 		Y: 0,
-		W: geom.W - 2,
+		W: geom.W,
 		H: uint16(ws.Screen.ScreenInfo.HeightInPixels) - 20,
 	}
 
@@ -51,8 +51,8 @@ func newRootFrame(ws *Workspace) (*Frame, error) {
 	xproto.CreateWindow(
 		f.Conn(), ws.Screen.ScreenInfo.RootDepth, w, ws.WorkspaceWindow,
 		frameGeom.X, frameGeom.Y, // Position at the bottom
-		frameGeom.W-2, frameGeom.H-2, // Adjust height for top and bottom borders
-		1, // Set border width to 1px
+		frameGeom.W, frameGeom.H, // Adjust height for top and bottom borders
+		0, // Set border width to 1px
 		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
@@ -185,7 +185,7 @@ func (f *Frame) split(geom1, geom2 Rect) error {
 		f.Conn(), ws.Screen.ScreenInfo.RootDepth, f1W, f.window,
 		geom1.X, geom1.Y,
 		geom1.W, geom1.H,
-		1,
+		0,
 		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
@@ -199,7 +199,7 @@ func (f *Frame) split(geom1, geom2 Rect) error {
 		f.Conn(), ws.Screen.ScreenInfo.RootDepth, f2W, f.window,
 		geom2.X, geom2.Y,
 		geom2.W, geom2.H,
-		1,
+		0,
 		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
@@ -263,13 +263,13 @@ func (f *Frame) splitV() error {
 	leftGeom := Rect{
 		X: 0,
 		Y: 0,
-		W: halfW + 1,
+		W: halfW,
 		H: f.g.H,
 	}
 	rightGeom := Rect{
 		X: int16(halfW),
 		Y: 0,
-		W: halfW - 1,
+		W: halfW,
 		H: f.g.H,
 	}
 	return f.split(leftGeom, rightGeom)
