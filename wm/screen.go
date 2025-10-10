@@ -9,38 +9,6 @@ import (
 	"github.com/BurntSushi/xgb/xproto"
 )
 
-type atoms struct {
-	WM_PROTOCOLS, WM_DELETE_WINDOW, WM_TAKE_FOCUS, WM_STATE                    xproto.Atom
-	NET_SUPPORTING_WM_CHECK, NET_SUPPORTED, NET_CLIENT_LIST, NET_ACTIVE_WINDOW xproto.Atom
-	NET_WM_NAME, UTF8_STRING, NET_WM_WINDOW_TYPE, NET_WM_WINDOW_TYPE_DOCK      xproto.Atom
-}
-
-func internAtom(X *xgb.Conn, name string) xproto.Atom {
-	rep, err := xproto.InternAtom(X, false, uint16(len(name)), name).Reply()
-	if err != nil {
-		log.Fatalf("InternAtom %s: %v", name, err)
-	}
-	return rep.Atom
-}
-
-func getAtoms(X *xgb.Conn) atoms {
-	return atoms{
-		WM_PROTOCOLS:            internAtom(X, "WM_PROTOCOLS"),
-		WM_DELETE_WINDOW:        internAtom(X, "WM_DELETE_WINDOW"),
-		WM_TAKE_FOCUS:           internAtom(X, "WM_TAKE_FOCUS"),
-		WM_STATE:                internAtom(X, "WM_STATE"),
-		NET_SUPPORTING_WM_CHECK: internAtom(X, "_NET_SUPPORTING_WM_CHECK"),
-		NET_SUPPORTED:           internAtom(X, "_NET_SUPPORTED"),
-		NET_CLIENT_LIST:         internAtom(X, "_NET_CLIENT_LIST"),
-		NET_ACTIVE_WINDOW:       internAtom(X, "_NET_ACTIVE_WINDOW"),
-		NET_WM_NAME:             internAtom(X, "_NET_WM_NAME"),
-		UTF8_STRING:             internAtom(X, "UTF8_STRING"),
-		NET_WM_WINDOW_TYPE:      internAtom(X, "_NET_WM_WINDOW_TYPE"),
-		NET_WM_WINDOW_TYPE_DOCK: internAtom(X, "_NET_WM_WINDOW_TYPE_DOCK"),
-	}
-}
-
-// Screen holds multiple workspaces and active WS index.
 type Screen struct {
 	wm *Manager
 
@@ -51,12 +19,43 @@ type Screen struct {
 	activeWorkspaceIdx int
 }
 
+type atoms struct {
+	WM_PROTOCOLS, WM_DELETE_WINDOW, WM_TAKE_FOCUS, WM_STATE                    xproto.Atom
+	NET_SUPPORTING_WM_CHECK, NET_SUPPORTED, NET_CLIENT_LIST, NET_ACTIVE_WINDOW xproto.Atom
+	NET_WM_NAME, UTF8_STRING, NET_WM_WINDOW_TYPE, NET_WM_WINDOW_TYPE_DOCK      xproto.Atom
+}
+
+func (s *Screen) internAtom(name string) xproto.Atom {
+	rep, err := xproto.InternAtom(s.Conn(), false, uint16(len(name)), name).Reply()
+	if err != nil {
+		log.Fatalf("InternAtom %s: %v", name, err)
+	}
+	return rep.Atom
+}
+
+func (s *Screen) getAtoms() atoms {
+	return atoms{
+		WM_PROTOCOLS:            s.internAtom("WM_PROTOCOLS"),
+		WM_DELETE_WINDOW:        s.internAtom("WM_DELETE_WINDOW"),
+		WM_TAKE_FOCUS:           s.internAtom("WM_TAKE_FOCUS"),
+		WM_STATE:                s.internAtom("WM_STATE"),
+		NET_SUPPORTING_WM_CHECK: s.internAtom("_NET_SUPPORTING_WM_CHECK"),
+		NET_SUPPORTED:           s.internAtom("_NET_SUPPORTED"),
+		NET_CLIENT_LIST:         s.internAtom("_NET_CLIENT_LIST"),
+		NET_ACTIVE_WINDOW:       s.internAtom("_NET_ACTIVE_WINDOW"),
+		NET_WM_NAME:             s.internAtom("_NET_WM_NAME"),
+		UTF8_STRING:             s.internAtom("UTF8_STRING"),
+		NET_WM_WINDOW_TYPE:      s.internAtom("_NET_WM_WINDOW_TYPE"),
+		NET_WM_WINDOW_TYPE_DOCK: s.internAtom("_NET_WM_WINDOW_TYPE_DOCK"),
+	}
+}
+
 func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
-		atoms:      getAtoms(wm.Conn()),
 		screenInfo: screenInfo,
 	}
+	screen.atoms = screen.getAtoms()
 
 	mask := uint32(
 		xproto.EventMaskSubstructureRedirect |

@@ -55,11 +55,6 @@ func NewManager() (*Manager, error) {
 	return wm, nil
 }
 
-type Geometry struct {
-	X, Y int16
-	W, H uint16
-}
-
 //func (wm *WM) manageExistingWindows() {
 //	tree, _ := xproto.QueryTree(wm.X, wm.Root).Reply()
 //	for _, win := range tree.Children {
@@ -400,4 +395,9 @@ func (wm *Manager) Run() error {
 			//wm.handleClientMessage(ev)
 		}
 	}
+}
+
+type Geometry struct {
+	X, Y int16
+	W, H uint16
 }
