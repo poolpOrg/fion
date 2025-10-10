@@ -1,8 +1,10 @@
 package wm
 
 import (
+	"encoding/binary"
 	"fmt"
 
+	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 )
 
@@ -50,61 +52,13 @@ func newScreen(wm *Manager, scr xproto.ScreenInfo) (*Screen, error) {
 	return screen, nil
 }
 
-func (sc *Screen) Geometry() Rect {
-	scr := sc.ScreenInfo
+func (s *Screen) Conn() *xgb.Conn {
+	return s.wm.Conn()
+}
+
+func (s *Screen) Geometry() Rect {
+	scr := s.ScreenInfo
 	return Rect{0, 0, uint16(scr.WidthInPixels), uint16(scr.HeightInPixels)}
-}
-
-func (sc *Screen) GetActiveWorkspace() *Workspace {
-	if sc.activeWorkspaceIdx < 0 || sc.activeWorkspaceIdx >= len(sc.Workspaces) {
-		return nil
-	}
-	return sc.Workspaces[sc.activeWorkspaceIdx]
-}
-
-func (sc *Screen) newWorkspace() (*Workspace, error) {
-	ws, err := newWorkspace(sc)
-	if err != nil {
-		return nil, err
-	}
-	sc.Workspaces = append(sc.Workspaces, ws)
-	sc.activeWorkspaceIdx = len(sc.Workspaces) - 1
-	return ws, nil
-}
-
-func (sc *Screen) cycleWorkspaceLeft() *Workspace {
-	sc.activeWorkspaceIdx = (sc.activeWorkspaceIdx + len(sc.Workspaces) - 1) % len(sc.Workspaces)
-	return sc.Workspaces[sc.activeWorkspaceIdx]
-}
-
-func (sc *Screen) cycleWorkspaceRight() *Workspace {
-	sc.activeWorkspaceIdx = (sc.activeWorkspaceIdx + 1) % len(sc.Workspaces)
-	return sc.Workspaces[sc.activeWorkspaceIdx]
-}
-
-func (sc *Screen) removeWorkspace() {
-	if len(sc.Workspaces) <= 1 {
-		return
-	}
-
-	old := sc.GetActiveWorkspace()
-	new := sc.cycleWorkspaceRight()
-
-	workspaces := []*Workspace{}
-	for _, w := range sc.Workspaces {
-		if w != old {
-			workspaces = append(workspaces, w)
-		}
-	}
-
-	sc.Workspaces = workspaces
-
-	if sc.activeWorkspaceIdx >= len(sc.Workspaces) {
-		sc.activeWorkspaceIdx = 0
-	}
-
-	new.Map()
-	old.Destroy()
 }
 
 func (s *Screen) initEWMH() error {
@@ -117,11 +71,80 @@ func (s *Screen) initEWMH() error {
 	xproto.CreateWindow(wm.Conn(), s.ScreenInfo.RootDepth, w, s.ScreenInfo.Root, 0, 0, 1, 1, 0,
 		xproto.WindowClassInputOutput, s.ScreenInfo.RootVisual, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
 	//wm.SupportingWin = w
-	wm.setProp32(s.ScreenInfo.Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
-	wm.setProp32(w, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
-	wm.setPropStr(w, A.NET_WM_NAME, A.UTF8_STRING, "fion")
+	s.setProp32(s.ScreenInfo.Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	s.setProp32(w, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	s.setPropStr(w, A.NET_WM_NAME, A.UTF8_STRING, "fion")
 	supported := []xproto.Atom{A.NET_SUPPORTED, A.NET_SUPPORTING_WM_CHECK, A.NET_CLIENT_LIST, A.NET_ACTIVE_WINDOW}
-	wm.setPropAtoms(s.ScreenInfo.Root, A.NET_SUPPORTED, supported)
+	s.setPropAtoms(s.ScreenInfo.Root, A.NET_SUPPORTED, supported)
 	//wm.updateClientList()
 	return nil
+}
+
+func (s *Screen) setProp32(win xproto.Window, prop, typ xproto.Atom, v uint32) {
+	xproto.ChangeProperty(s.Conn(), xproto.PropModeReplace, win, prop, typ, 32, 1, []uint8{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)})
+}
+
+func (s *Screen) setPropStr(win xproto.Window, prop, typ xproto.Atom, str string) {
+	data := []byte(str)
+	xproto.ChangeProperty(s.Conn(), xproto.PropModeReplace, win, prop, typ, 8, uint32(len(data)), data)
+}
+
+func (s *Screen) setPropAtoms(win xproto.Window, prop xproto.Atom, atoms []xproto.Atom) {
+	buf := make([]byte, 4*len(atoms))
+	for i, a := range atoms {
+		binary.LittleEndian.PutUint32(buf[i*4:(i+1)*4], uint32(a))
+	}
+	xproto.ChangeProperty(s.Conn(), xproto.PropModeReplace, win, prop, xproto.AtomAtom, 32, uint32(len(atoms)), buf)
+}
+
+func (s *Screen) GetActiveWorkspace() *Workspace {
+	if s.activeWorkspaceIdx < 0 || s.activeWorkspaceIdx >= len(s.Workspaces) {
+		return nil
+	}
+	return s.Workspaces[s.activeWorkspaceIdx]
+}
+
+func (s *Screen) newWorkspace() (*Workspace, error) {
+	ws, err := newWorkspace(s)
+	if err != nil {
+		return nil, err
+	}
+	s.Workspaces = append(s.Workspaces, ws)
+	s.activeWorkspaceIdx = len(s.Workspaces) - 1
+	return ws, nil
+}
+
+func (s *Screen) cycleWorkspaceLeft() *Workspace {
+	s.activeWorkspaceIdx = (s.activeWorkspaceIdx + len(s.Workspaces) - 1) % len(s.Workspaces)
+	return s.Workspaces[s.activeWorkspaceIdx]
+}
+
+func (s *Screen) cycleWorkspaceRight() *Workspace {
+	s.activeWorkspaceIdx = (s.activeWorkspaceIdx + 1) % len(s.Workspaces)
+	return s.Workspaces[s.activeWorkspaceIdx]
+}
+
+func (s *Screen) removeWorkspace() {
+	if len(s.Workspaces) <= 1 {
+		return
+	}
+
+	old := s.GetActiveWorkspace()
+	new := s.cycleWorkspaceRight()
+
+	workspaces := []*Workspace{}
+	for _, w := range s.Workspaces {
+		if w != old {
+			workspaces = append(workspaces, w)
+		}
+	}
+
+	s.Workspaces = workspaces
+
+	if s.activeWorkspaceIdx >= len(s.Workspaces) {
+		s.activeWorkspaceIdx = 0
+	}
+
+	new.Map()
+	old.Destroy()
 }
