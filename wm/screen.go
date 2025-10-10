@@ -11,16 +11,16 @@ import (
 // Screen holds multiple workspaces and active WS index.
 type Screen struct {
 	wm         *Manager
-	ScreenInfo xproto.ScreenInfo
+	screenInfo xproto.ScreenInfo
 	Workspaces []*Workspace
 
 	activeWorkspaceIdx int
 }
 
-func newScreen(wm *Manager, scr xproto.ScreenInfo) (*Screen, error) {
+func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
-		ScreenInfo: scr,
+		screenInfo: screenInfo,
 	}
 
 	mask := uint32(
@@ -32,12 +32,12 @@ func newScreen(wm *Manager, scr xproto.ScreenInfo) (*Screen, error) {
 			xproto.EventMaskPointerMotion |
 			xproto.EventMaskKeyPress,
 	)
-	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), scr.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
+	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), screenInfo.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
 		return nil, fmt.Errorf("another WM running: %w", err)
 	}
 
-	xproto.ChangeWindowAttributes(wm.Conn(), scr.Root, xproto.CwBackPixel, []uint32{scr.BlackPixel})
-	xproto.ClearArea(wm.Conn(), false, scr.Root, 0, 0, scr.WidthInPixels, scr.HeightInPixels)
+	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{screenInfo.BlackPixel})
+	xproto.ClearArea(wm.Conn(), false, screenInfo.Root, 0, 0, screenInfo.WidthInPixels, screenInfo.HeightInPixels)
 
 	if err := screen.initEWMH(); err != nil {
 		return nil, err
@@ -57,8 +57,11 @@ func (s *Screen) Conn() *xgb.Conn {
 }
 
 func (s *Screen) Geometry() Rect {
-	scr := s.ScreenInfo
-	return Rect{0, 0, uint16(scr.WidthInPixels), uint16(scr.HeightInPixels)}
+	return Rect{0, 0, uint16(s.Info().WidthInPixels), uint16(s.Info().HeightInPixels)}
+}
+
+func (s *Screen) Info() xproto.ScreenInfo {
+	return s.screenInfo
 }
 
 func (s *Screen) initEWMH() error {
@@ -68,14 +71,14 @@ func (s *Screen) initEWMH() error {
 	if err != nil {
 		return err
 	}
-	xproto.CreateWindow(wm.Conn(), s.ScreenInfo.RootDepth, w, s.ScreenInfo.Root, 0, 0, 1, 1, 0,
-		xproto.WindowClassInputOutput, s.ScreenInfo.RootVisual, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
+	xproto.CreateWindow(wm.Conn(), s.Info().RootDepth, w, s.Info().Root, 0, 0, 1, 1, 0,
+		xproto.WindowClassInputOutput, s.Info().RootVisual, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
 	//wm.SupportingWin = w
-	s.setProp32(s.ScreenInfo.Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	s.setProp32(s.Info().Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setProp32(w, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setPropStr(w, A.NET_WM_NAME, A.UTF8_STRING, "fion")
 	supported := []xproto.Atom{A.NET_SUPPORTED, A.NET_SUPPORTING_WM_CHECK, A.NET_CLIENT_LIST, A.NET_ACTIVE_WINDOW}
-	s.setPropAtoms(s.ScreenInfo.Root, A.NET_SUPPORTED, supported)
+	s.setPropAtoms(s.Info().Root, A.NET_SUPPORTED, supported)
 	//wm.updateClientList()
 	return nil
 }

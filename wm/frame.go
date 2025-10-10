@@ -36,7 +36,7 @@ func newRootFrame(ws *Workspace) (*Frame, error) {
 		X: 0,
 		Y: 0,
 		W: geom.W,
-		H: uint16(ws.Screen.ScreenInfo.HeightInPixels) - 20,
+		H: uint16(ws.Screen.Info().HeightInPixels) - 20,
 	}
 
 	f := &Frame{
@@ -49,14 +49,14 @@ func newRootFrame(ws *Workspace) (*Frame, error) {
 	}
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.ScreenInfo.RootDepth, w, ws.WorkspaceWindow,
+		f.Conn(), ws.Screen.Info().RootDepth, w, ws.WorkspaceWindow,
 		frameGeom.X, frameGeom.Y, // Position at the bottom
 		frameGeom.W, frameGeom.H, // Adjust height for top and bottom borders
 		0, // Set border width to 1px
-		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Screen.Info().BlackPixel,
 			ws.Color, // Set the border color
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
@@ -93,14 +93,14 @@ func (f *Frame) setuptitleBar() error {
 	}
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.ScreenInfo.RootDepth, w, f.window,
+		f.Conn(), ws.Screen.Info().RootDepth, w, f.window,
 		0, 0, // Position at the bottom
 		geom.W-4, 20, // Adjust height for top and bottom borders
 		1, // Set border width to 1px
-		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			f.workspace.Screen.ScreenInfo.BlackPixel,
+			f.workspace.Screen.Info().BlackPixel,
 			f.workspace.Color, // Set the border color
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
@@ -111,8 +111,8 @@ func (f *Frame) setuptitleBar() error {
 	gc, _ := xproto.NewGcontextId(f.Conn())
 	xproto.CreateGC(f.Conn(), gc, xproto.Drawable(f.titleBar),
 		xproto.GcForeground|xproto.GcBackground, []uint32{
-			f.workspace.Screen.ScreenInfo.WhitePixel, // text color
-			f.workspace.Screen.ScreenInfo.BlackPixel, // bg (unused by ImageText8)
+			f.workspace.Screen.Info().WhitePixel, // text color
+			f.workspace.Screen.Info().BlackPixel, // bg (unused by ImageText8)
 		},
 	)
 	// Load a core font and bind it to the GC
@@ -182,28 +182,28 @@ func (f *Frame) split(geom1, geom2 Rect) error {
 	f.leaf = false
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.ScreenInfo.RootDepth, f1W, f.window,
+		f.Conn(), ws.Screen.Info().RootDepth, f1W, f.window,
 		geom1.X, geom1.Y,
 		geom1.W, geom1.H,
 		0,
-		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
-			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Screen.Info().BlackPixel,
 			ws.Color,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.ScreenInfo.RootDepth, f2W, f.window,
+		f.Conn(), ws.Screen.Info().RootDepth, f2W, f.window,
 		geom2.X, geom2.Y,
 		geom2.W, geom2.H,
 		0,
-		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
-			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Screen.Info().BlackPixel,
 			ws.Color,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},

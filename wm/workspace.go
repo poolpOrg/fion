@@ -43,11 +43,11 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 	}
 
 	xproto.CreateWindow(
-		wm.Conn(), screen.ScreenInfo.RootDepth, w, screen.ScreenInfo.Root,
+		wm.Conn(), screen.Info().RootDepth, w, screen.Info().Root,
 		geom.X, geom.Y,
 		geom.W, geom.H, // Adjust height for top and bottom borders
 		0, // Set border width to 1px
-		xproto.WindowClassInputOutput, screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
 			ws.Color,
@@ -84,14 +84,14 @@ func (ws *Workspace) setupInfoBar() error {
 	}
 
 	xproto.CreateWindow(
-		ws.Conn(), ws.Screen.ScreenInfo.RootDepth, w, ws.WorkspaceWindow,
-		geom.X, int16(ws.Screen.ScreenInfo.HeightInPixels)-20, // Position at the bottom
+		ws.Conn(), ws.Screen.Info().RootDepth, w, ws.WorkspaceWindow,
+		geom.X, int16(ws.Screen.Info().HeightInPixels)-20, // Position at the bottom
 		geom.W-(2), 20-2, // Adjust height for top and bottom borders
 		1, // Set border width to 1px
-		xproto.WindowClassInputOutput, ws.Screen.ScreenInfo.RootVisual,
+		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			ws.Screen.ScreenInfo.BlackPixel,
+			ws.Screen.Info().BlackPixel,
 			ws.Color, // Set the border color
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
@@ -102,8 +102,8 @@ func (ws *Workspace) setupInfoBar() error {
 	gc, _ := xproto.NewGcontextId(ws.Conn())
 	xproto.CreateGC(ws.Conn(), gc, xproto.Drawable(ws.InfoBarWindow),
 		xproto.GcForeground|xproto.GcBackground, []uint32{
-			ws.Screen.ScreenInfo.WhitePixel, // text color
-			ws.Screen.ScreenInfo.BlackPixel, // bg (unused by ImageText8)
+			ws.Screen.Info().WhitePixel, // text color
+			ws.Screen.Info().BlackPixel, // bg (unused by ImageText8)
 		},
 	)
 	// Load a core font and bind it to the GC
