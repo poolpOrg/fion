@@ -8,6 +8,8 @@ import (
 )
 
 const (
+	XK_Escape xproto.Keysym = 0xFF1B
+
 	XK_F1  xproto.Keysym = 0xFFBE
 	XK_F2  xproto.Keysym = 0xFFBF
 	XK_F3  xproto.Keysym = 0xFFC0

@@ -263,6 +263,10 @@ func (wm *Manager) Run() error {
 				mode = M_Frame
 				continue
 			}
+			if mods == km.Super && sym == XK_Escape {
+				return nil
+			}
+
 			if mods != 0 {
 				mode = 0
 			}
