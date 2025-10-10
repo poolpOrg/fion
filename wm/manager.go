@@ -15,8 +15,11 @@ import (
 )
 
 type Manager struct {
-	xConn   *xgb.Conn
-	Setup   *xproto.SetupInfo
+	xConn *xgb.Conn
+	Setup *xproto.SetupInfo
+
+	KeyboardManager *KeyboardManager
+
 	Screens []*Screen
 
 	NumLock uint16
@@ -46,6 +49,7 @@ func NewManager() (*Manager, error) {
 		Frames:  make(map[xproto.Window]*Frame),
 		Clients: make(map[xproto.Window]struct{}),
 	}
+	wm.KeyboardManager = NewKeyboardManager(wm)
 
 	if err := wm.initScreens(); err != nil {
 		wm.Close()
@@ -187,11 +191,16 @@ func (wm *Manager) GetActiveClient() xproto.Window {
 	return wm.GetActiveFrame().GetActiveClient()
 }
 
+const (
+	M_Workspace = 1
+	M_Frame     = 2
+)
+
 func (wm *Manager) Run() error {
+
+	base := wm.KeyboardManager.Super
 	for _, scr := range wm.Screens {
-		_ = wm.grabKey(scr.Info().Root, xproto.ModMask4, Key_BackQuote)
-		_ = wm.grabKey(scr.Info().Root, xproto.ModMask1, Key_D)
-		_ = wm.grabKey(scr.Info().Root, xproto.ModMask1, Key_Q)
+		_ = wm.KeyboardManager.GrabNamed(scr.Info().Root, "F9", base)
 	}
 
 	// Signals
@@ -213,6 +222,7 @@ func (wm *Manager) Run() error {
 		}
 	}()
 
+	mode := 0
 	for {
 		e, err := wm.xConn.WaitForEvent()
 		if err != nil {
@@ -238,81 +248,39 @@ func (wm *Manager) Run() error {
 		case xproto.UnmapNotifyEvent:
 			//wm.unmanageWindow(ev.Window)
 		case xproto.KeyPressEvent:
-			mods := ev.State & (xproto.ModMask1 | xproto.ModMask2 | xproto.ModMask3 | xproto.ModMask4 | xproto.ModMaskControl | xproto.ModMaskShift)
+			km := wm.KeyboardManager
 
-			log.Printf("KeyPressed: %d %d", ev.Detail, mods)
-			if ev.Detail == Key_F9 && mods == xproto.ModMask2 {
-				screen := wm.GetActiveScreen()
-				if screen == nil {
-					continue
-				}
-				old := wm.GetActiveWorkspace()
-				ws, err := screen.newWorkspace()
-				if err != nil {
-					log.Printf("newWorkspace: %v", err)
-					continue
-				}
-				ws.Map()
-				old.Unmap()
+			mods := ev.State &^ (xproto.ModMaskLock | km.Num)
+			sym := km.eventKeysym(ev.Detail, ev.State)
+
+			log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
+
+			if mods == km.Super && sym == XK_w {
+				mode = M_Workspace
+				continue
+			}
+			if mods == km.Super && sym == XK_f {
+				mode = M_Frame
+				continue
+			}
+			if mods != 0 {
+				mode = 0
 			}
 
-			if mods == xproto.ModMask2 {
-				switch ev.Detail {
-				case Key_D:
-					frame := wm.GetActiveFrame()
-					client := wm.GetActiveClient()
-					if client != 0 {
-						frame.RemoveClient(client)
-						wm.unmanageWindow(client)
-					} else if frame.GetParent() != nil {
-						parent := frame.GetParent()
-						parent.RemoveChild(frame)
-					} else {
-						wm.GetActiveScreen().removeWorkspace()
-					}
-
-					//frame := wm.GetActiveFrame()
-
-				//	wm.GetActiveFrame().removeActiveClient()
-				case Key_H:
-					wm.GetActiveWorkspace().splitH()
-				case Key_V:
-					wm.GetActiveWorkspace().splitV()
-
-				case Key_LeftArrow:
-					wm.GetActiveWorkspace().cycleFrameLeft()
-					for _, s := range wm.Screens {
-						for _, ws := range s.Workspaces {
-							ws.updateTitleBars()
-						}
-					}
-				case Key_RightArrow:
-					wm.GetActiveWorkspace().cycleFrameRight()
-					for _, s := range wm.Screens {
-						for _, ws := range s.Workspaces {
-							ws.updateTitleBars()
-						}
-					}
-				case Key_UpArrow:
-					wm.GetActiveFrame().cycleClientLeft()
-					for _, s := range wm.Screens {
-						for _, ws := range s.Workspaces {
-							ws.updateTitleBars()
-						}
-					}
-				case Key_DownArrow:
-					wm.GetActiveFrame().cycleClientRight()
-					for _, s := range wm.Screens {
-						for _, ws := range s.Workspaces {
-							ws.updateTitleBars()
-						}
-					}
+			if mode == 0 {
+				switch sym {
+				case XK_Space:
+					fmt.Println("TODO: SCRATCHPAD")
+				case XK_F1:
+					fmt.Println("TODO: browser")
+				case XK_F2:
+					exec.Command("xterm", "-bg", "black", "-fg", "white").Start()
 				}
 			}
 
-			if mods == xproto.ModMask2|xproto.ModMaskShift {
-				switch ev.Detail {
-				case Key_W:
+			if mode == M_Workspace {
+				switch sym {
+				case XK_c:
 					screen := wm.GetActiveScreen()
 					if screen == nil {
 						continue
@@ -326,10 +294,25 @@ func (wm *Manager) Run() error {
 					ws.Map()
 					old.Unmap()
 
-				case Key_D:
-					wm.GetActiveScreen().removeWorkspace()
+				case XK_d:
+					frame := wm.GetActiveFrame()
+					client := wm.GetActiveClient()
+					if client != 0 {
+						frame.RemoveClient(client)
+						wm.unmanageWindow(client)
+					} else if frame.GetParent() != nil {
+						parent := frame.GetParent()
+						parent.RemoveChild(frame)
+					} else {
+						wm.GetActiveScreen().removeWorkspace()
+					}
+				case XK_h:
+					wm.GetActiveWorkspace().splitH()
 
-				case Key_LeftArrow:
+				case XK_v:
+					wm.GetActiveWorkspace().splitV()
+
+				case XK_p:
 					old := wm.GetActiveWorkspace()
 					new := wm.GetActiveScreen().cycleWorkspaceLeft()
 					if old != nil && old != new {
@@ -337,29 +320,84 @@ func (wm *Manager) Run() error {
 						old.Unmap()
 					}
 
-				case Key_RightArrow:
+				case XK_n:
 					old := wm.GetActiveWorkspace()
 					new := wm.GetActiveScreen().cycleWorkspaceRight()
 					if old != nil && old != new {
 						new.Map()
 						old.Unmap()
 					}
-
-				case Key_Space:
-					fmt.Println("TODO: SCRATCHPAD")
 				}
 			}
 
-			if mods == 0 {
-				switch ev.Detail {
-				case Key_F1:
-					fmt.Println("TODO: browser")
+			if mode == M_Frame {
+				switch sym {
+				case XK_p:
+					fmt.Println("previous workspace")
+					wm.GetActiveWorkspace().cycleFrameLeft()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
 
-				case Key_F2:
-					exec.Command("xterm", "-bg", "black", "-fg", "white").Start()
-
+				case XK_n:
+					fmt.Println("nextworkspace")
+					wm.GetActiveWorkspace().cycleFrameRight()
+					for _, s := range wm.Screens {
+						for _, ws := range s.Workspaces {
+							ws.updateTitleBars()
+						}
+					}
 				}
 			}
+
+			mode = 0
+
+			/*
+
+
+
+					case XK_Up:
+						wm.GetActiveFrame().cycleClientLeft()
+						for _, s := range wm.Screens {
+							for _, ws := range s.Workspaces {
+								ws.updateTitleBars()
+							}
+						}
+
+					case XK_Down:
+						wm.GetActiveFrame().cycleClientRight()
+						for _, s := range wm.Screens {
+							for _, ws := range s.Workspaces {
+								ws.updateTitleBars()
+							}
+						}
+
+					}
+				}
+			*/
+
+			/*
+					case km.Keycode("LeftArrow"):
+						old := wm.GetActiveWorkspace()
+						new := wm.GetActiveScreen().cycleWorkspaceLeft()
+						if old != nil && old != new {
+							new.Map()
+							old.Unmap()
+						}
+
+					case km.Keycode("RightArrow"):
+						old := wm.GetActiveWorkspace()
+						new := wm.GetActiveScreen().cycleWorkspaceRight()
+						if old != nil && old != new {
+							new.Map()
+							old.Unmap()
+						}
+
+				}
+
+			*/
 
 		case xproto.ButtonPressEvent:
 			/*z
