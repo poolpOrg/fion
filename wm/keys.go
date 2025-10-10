@@ -39,7 +39,7 @@ const Key_DownArrow = xproto.Keycode(133)
 
 const KeyCMD = xproto.Keycode(63)
 
-func (wm *WM) grabKey(win xproto.Window, mods uint16, key xproto.Keycode) error {
+func (wm *Manager) grabKey(win xproto.Window, mods uint16, key xproto.Keycode) error {
 	locks := []uint16{0, xproto.ModMaskLock, wm.NumLock, xproto.ModMaskLock | wm.NumLock}
 	for _, m := range locks {
 		if err := xproto.GrabKeyChecked(wm.Conn(), true, win, mods|m, key, xproto.GrabModeAsync, xproto.GrabModeAsync).Check(); err != nil {

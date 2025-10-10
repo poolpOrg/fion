@@ -1,4 +1,4 @@
-package fion
+package wm
 
 import (
 	"fmt"
@@ -8,14 +8,14 @@ import (
 
 // Screen holds multiple workspaces and active WS index.
 type Screen struct {
-	wm         *WM
+	wm         *Manager
 	ScreenInfo xproto.ScreenInfo
 	Workspaces []*Workspace
 
 	activeWorkspaceIdx int
 }
 
-func newScreen(wm *WM, scr xproto.ScreenInfo) (*Screen, error) {
+func newScreen(wm *Manager, scr xproto.ScreenInfo) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
 		ScreenInfo: scr,

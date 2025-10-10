@@ -14,7 +14,7 @@ import (
 )
 
 type Workspace struct {
-	Manager *WM
+	Manager *Manager
 	Screen  *Screen
 
 	Color           uint32
