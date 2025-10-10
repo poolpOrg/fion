@@ -10,7 +10,9 @@ import (
 
 // Screen holds multiple workspaces and active WS index.
 type Screen struct {
-	wm         *Manager
+	wm *Manager
+
+	atoms      Atoms
 	screenInfo xproto.ScreenInfo
 	Workspaces []*Workspace
 
@@ -20,6 +22,7 @@ type Screen struct {
 func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
+		atoms:      getAtoms(wm.Conn()),
 		screenInfo: screenInfo,
 	}
 
@@ -66,19 +69,18 @@ func (s *Screen) Info() xproto.ScreenInfo {
 
 func (s *Screen) initEWMH() error {
 	wm := s.wm
-	X, A := wm.Conn(), wm.Atoms
-	w, err := xproto.NewWindowId(X)
+	w, err := xproto.NewWindowId(s.Conn())
 	if err != nil {
 		return err
 	}
 	xproto.CreateWindow(wm.Conn(), s.Info().RootDepth, w, s.Info().Root, 0, 0, 1, 1, 0,
 		xproto.WindowClassInputOutput, s.Info().RootVisual, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
 	//wm.SupportingWin = w
-	s.setProp32(s.Info().Root, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
-	s.setProp32(w, A.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
-	s.setPropStr(w, A.NET_WM_NAME, A.UTF8_STRING, "fion")
-	supported := []xproto.Atom{A.NET_SUPPORTED, A.NET_SUPPORTING_WM_CHECK, A.NET_CLIENT_LIST, A.NET_ACTIVE_WINDOW}
-	s.setPropAtoms(s.Info().Root, A.NET_SUPPORTED, supported)
+	s.setProp32(s.Info().Root, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	s.setProp32(w, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
+	s.setPropStr(w, s.atoms.NET_WM_NAME, s.atoms.UTF8_STRING, "fion")
+	supported := []xproto.Atom{s.atoms.NET_SUPPORTED, s.atoms.NET_SUPPORTING_WM_CHECK, s.atoms.NET_CLIENT_LIST, s.atoms.NET_ACTIVE_WINDOW}
+	s.setPropAtoms(s.Info().Root, s.atoms.NET_SUPPORTED, supported)
 	//wm.updateClientList()
 	return nil
 }
