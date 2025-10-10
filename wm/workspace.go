@@ -1,4 +1,4 @@
-package main
+package wm
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
 	"github.com/dustin/go-humanize"
+
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
 )

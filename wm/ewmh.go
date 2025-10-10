@@ -1,4 +1,4 @@
-package main
+package wm
 
 import (
 	"encoding/binary"

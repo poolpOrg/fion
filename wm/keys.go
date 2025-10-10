@@ -1,4 +1,4 @@
-package main
+package fion
 
 import (
 	"github.com/BurntSushi/xgb/xproto"

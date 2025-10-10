@@ -1,4 +1,4 @@
-package main
+package fion
 
 import (
 	"math/rand"

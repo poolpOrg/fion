@@ -1,4 +1,4 @@
-package main
+package fion
 
 /*
 func setDefaultCursor(X *xgb.Conn, win xproto.Window) {
