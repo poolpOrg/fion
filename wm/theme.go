@@ -20,7 +20,7 @@ const (
 )
 
 const (
-	colorBackground = draculaBackground  // root, workspaces, empty frames
+	colorBackground = draculaBackground  // root, workspaces
 	colorBar        = draculaDarker      // info bar, title bars, launcher
 	colorBorder     = draculaCurrentLine // borders of inactive frames
 	colorText       = draculaForeground
@@ -30,6 +30,10 @@ const (
 	colorTabSelected = draculaComment     // active tab of an inactive frame
 	colorAccent      = draculaPurple      // active tab, active frame, selection
 	colorAccentText  = draculaBackground  // text on colorAccent
+
+	// empty frames are black, with the logo in its own white
+	colorEmpty = 0x000000
+	colorLogo  = 0xffffff
 )
 
 // xtermResources are the Dracula colors for xterm, from Dracula's

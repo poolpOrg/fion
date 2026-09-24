@@ -33,8 +33,8 @@ func TestLogoMask(t *testing.T) {
 	if blend(0x000000, 0xffffff, 0) != 0x000000 || blend(0x000000, 0xffffff, 255) != 0xffffff {
 		t.Fatalf("blend at the ends")
 	}
-	if c := blend(colorBackground, colorDim, 255); c != colorDim {
-		t.Fatalf("blend fully covered = %06x, want %06x", c, colorDim)
+	if c := blend(colorEmpty, colorLogo, 255); c != colorLogo {
+		t.Fatalf("blend fully covered = %06x, want %06x", c, colorLogo)
 	}
 }
 
@@ -53,7 +53,7 @@ func TestEmptyFrameShowsLogo(t *testing.T) {
 	logoPixels := 0
 	for i := 0; i+3 < len(img.Data); i += 4 {
 		c := uint32(img.Data[i+2])<<16 | uint32(img.Data[i+1])<<8 | uint32(img.Data[i])
-		if c == colorDim {
+		if c == colorLogo {
 			logoPixels++
 		}
 	}

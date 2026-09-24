@@ -12,7 +12,7 @@ import (
 )
 
 // Empty frames show the project's logo, centered: its luminance serves as
-// a mask to draw it in colorDim over colorBackground.
+// a mask to draw it in colorLogo over colorEmpty.
 
 // logoMask is how much of each pixel the logo covers, from 0 to 255.
 type logoMask struct {
@@ -152,7 +152,7 @@ func (s *Screen) logoPixmap(w int) (logoImage, bool) {
 		n := min(rows, sm.h-y0)
 		data := make([]byte, 0, n*rowBytes)
 		for _, a := range sm.alpha[y0*sm.w : (y0+n)*sm.w] {
-			c := blend(colorBackground, colorDim, a)
+			c := blend(colorEmpty, colorLogo, a)
 			r, g, b := byte(c>>16), byte(c>>8), byte(c)
 			if setup.ImageByteOrder == xproto.ImageOrderLSBFirst {
 				data = append(data, b, g, r, 0)

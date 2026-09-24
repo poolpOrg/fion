@@ -65,7 +65,7 @@ func newFrame(screen *Screen, ws *Workspace, parent *Frame, g Geometry) (*Frame,
 		xproto.WindowClassInputOutput, screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
-			colorBackground,
+			colorEmpty,
 			colorAccent, // the scratchpad's border
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
