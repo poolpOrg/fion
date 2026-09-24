@@ -29,6 +29,9 @@ type Manager struct {
 
 	// pending key prefix (M_Workspace, M_Frame, M_Client), 0 when none
 	mode int
+
+	// tab being dragged, nil when none
+	drag *tabDrag
 }
 
 func NewManager() (*Manager, error) {
@@ -349,6 +352,10 @@ func (wm *Manager) Run() error {
 func (wm *Manager) handleEvent(e xgb.Event) bool {
 	switch ev := e.(type) {
 	case xproto.ExposeEvent:
+		if wm.drag != nil && ev.Window == wm.drag.window {
+			wm.drawDragWindow()
+			break
+		}
 		// If the expose is for a workspace bar, redraw its label
 		for _, s := range wm.Screens {
 			for _, ws := range s.Workspaces {
@@ -381,7 +388,12 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case xproto.ButtonPressEvent:
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
+			wm.beginTabDrag(f, ev)
 		}
+	case xproto.MotionNotifyEvent:
+		wm.dragMotion(ev)
+	case xproto.ButtonReleaseEvent:
+		wm.endTabDrag(ev)
 		/*z
 		// Focus on click; Alt+Left move, Alt+Right resize on frame
 		if leaf := wm.Frames[ev.Event]; leaf != nil {

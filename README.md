@@ -53,7 +53,9 @@ action key without any modifier.
 | `F2`                 | start an xterm                                      |
 | `Super+Escape`       | quit fion                                           |
 
-Clicking a tab selects it and its frame.
+Clicking a tab selects it and its frame.  Dragging a tab moves its window
+to the frame it is dropped on, the scratchpad included, or to another place
+in its own title bar.
 
 Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
 modifier than Super.
@@ -89,8 +91,7 @@ known limitations
   xterm when the pointer is not over a client
 - input focus is only given to the scratchpad; elsewhere it follows the
   pointer
-- windows can't be moved between frames, so the scratchpad only holds the
-  windows opened while it is shown
+- windows can only be moved between frames with the mouse
 - splitting halves a frame, frames can't be resized
 - every window gets a tab, dialogs and transient windows included, and
   windows that exist when fion starts are not managed
