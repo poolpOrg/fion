@@ -17,11 +17,7 @@ import (
 // test's connection can be dropped.
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
-	display := os.Getenv("FION_TEST_DISPLAY")
-	if display == "" {
-		t.Skip("FION_TEST_DISPLAY not set")
-	}
-	t.Setenv("DISPLAY", display)
+	useTestDisplay(t)
 	wm, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -51,8 +47,18 @@ func newTestClient(t *testing.T, wm *Manager) xproto.Window {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wm.manageWindow(win)
+	wm.manageWindow(win, false)
 	return win
+}
+
+// useTestDisplay points DISPLAY at FION_TEST_DISPLAY, or skips the test.
+func useTestDisplay(t *testing.T) {
+	t.Helper()
+	display := os.Getenv("FION_TEST_DISPLAY")
+	if display == "" {
+		t.Skip("FION_TEST_DISPLAY not set")
+	}
+	t.Setenv("DISPLAY", display)
 }
 
 // checkTree verifies the frame tree's invariants and that the X window

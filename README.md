@@ -93,8 +93,7 @@ known limitations
   pointer
 - windows can only be moved between frames with the mouse
 - splitting halves a frame, frames can't be resized
-- every window gets a tab, dialogs and transient windows included, and
-  windows that exist when fion starts are not managed
+- every window gets a tab, dialogs and transient windows included
 - ConfigureRequest events are ignored
 - `Super+w` `d` destroys the client window instead of asking it to close
 - only the X screens are handled, not RandR outputs: on a multi-monitor

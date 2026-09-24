@@ -60,17 +60,26 @@ func NewManager() (*Manager, error) {
 		wm.Close()
 		return nil, err
 	}
+	wm.adoptExisting()
 
 	return wm, nil
 }
 
-//func (wm *WM) manageExistingWindows() {
-//	tree, _ := xproto.QueryTree(wm.X, wm.Root).Reply()
-//	for _, win := range tree.Children {
-//		//wm.tryManage(win)
-//		_ = win
-//	}
-//}
+// adoptExisting manages the windows that were shown before fion started,
+// bottom to top, so that the topmost one ends up the active tab. Those
+// that are unmapped will be managed when they are mapped.
+func (wm *Manager) adoptExisting() {
+	// frames are all on the active screen for now
+	s := wm.GetActiveScreen()
+	for _, win := range s.existing {
+		attr, err := xproto.GetWindowAttributes(wm.Conn(), win).Reply()
+		if err != nil || attr.OverrideRedirect || attr.MapState != xproto.MapStateViewable {
+			continue
+		}
+		wm.manageWindow(win, true)
+	}
+	s.existing = nil
+}
 
 func (wm *Manager) tryManage(w xproto.Window) {
 	attr, err := xproto.GetWindowAttributes(wm.Conn(), w).Reply()
@@ -83,10 +92,12 @@ func (wm *Manager) tryManage(w xproto.Window) {
 	if attr.MapState != xproto.MapStateUnmapped {
 		return
 	}
-	wm.manageWindow(w)
+	wm.manageWindow(w, false)
 }
 
-func (wm *Manager) manageWindow(win xproto.Window) {
+// manageWindow makes win a tab of the active frame. mapped tells whether
+// the window is already shown, as when adopting it at startup.
+func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	if _, exists := wm.Clients[win]; exists {
 		return
 	}
@@ -123,7 +134,12 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 	//xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{1})
 
 	// mapped by the frame, as its new active tab
-	wm.Clients[win] = &Client{frame: frame}
+	c := &Client{frame: frame, mapped: mapped}
+	if mapped {
+		// reparenting a mapped window unmaps it first
+		c.ignoreUnmap++
+	}
+	wm.Clients[win] = c
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
 
@@ -164,6 +180,11 @@ func (wm *Manager) handleDestroyNotify(ev xproto.DestroyNotifyEvent) {
 }
 
 func (wm *Manager) handleUnmapNotify(ev xproto.UnmapNotifyEvent) {
+	// A window that is a child of the root, as when it is adopted, is also
+	// reported to the root: only count the report on the window itself.
+	if ev.Event != ev.Window {
+		return
+	}
 	c, ok := wm.Clients[ev.Window]
 	if !ok {
 		return

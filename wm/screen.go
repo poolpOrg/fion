@@ -20,6 +20,9 @@ type Screen struct {
 
 	scratchpad      *Frame // created the first time it is shown
 	scratchpadShown bool
+
+	// the root's children when fion took over, to adopt at startup
+	existing []xproto.Window
 }
 
 type atoms struct {
@@ -71,6 +74,11 @@ func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 	)
 	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), screenInfo.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
 		return nil, fmt.Errorf("another WM running: %w", err)
+	}
+
+	// before creating any window of our own
+	if tree, err := xproto.QueryTree(wm.Conn(), screenInfo.Root).Reply(); err == nil {
+		screen.existing = tree.Children
 	}
 
 	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{screenInfo.BlackPixel})
