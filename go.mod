@@ -3,8 +3,8 @@ module github.com/poolpOrg/fion
 go 1.25.0
 
 require (
-	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
 	github.com/dustin/go-humanize v1.0.1
+	github.com/jezek/xgb v1.3.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
 )
 

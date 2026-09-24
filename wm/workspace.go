@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
 	"github.com/dustin/go-humanize"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
