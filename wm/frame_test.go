@@ -9,9 +9,11 @@ import (
 
 // These tests need an X server fion can manage, such as a throwaway Xvfb:
 //
-//	Xvfb :99 & FION_TEST_DISPLAY=:99 go test ./wm
+//	Xvfb :99 -noreset & FION_TEST_DISPLAY=:99 go test ./wm
 //
 // They are skipped otherwise, so that they never take over a real display.
+// Without -noreset the server resets when a test disconnects, and the next
+// test's connection can be dropped.
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
 	display := os.Getenv("FION_TEST_DISPLAY")

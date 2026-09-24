@@ -68,7 +68,7 @@ tests
 The frame tree tests need an X server fion can manage, such as Xvfb, named
 by `FION_TEST_DISPLAY`; they are skipped otherwise:
 
-    $ Xvfb :99 &
+    $ Xvfb :99 -noreset &
     $ FION_TEST_DISPLAY=:99 go test ./wm
 
 
