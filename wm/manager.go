@@ -391,6 +391,12 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.drawDragWindow()
 			break
 		}
+		if f := wm.frameByWindow(ev.Window); f != nil {
+			if ev.Count == 0 {
+				f.drawLogo()
+			}
+			break
+		}
 		// If the expose is for a workspace bar, redraw its label
 		for _, s := range wm.Screens {
 			for _, ws := range s.Workspaces {

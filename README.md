@@ -28,6 +28,8 @@ windows, `Super+F2` for a terminal, or drag tabs onto it.
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, CPU and memory usage and the time.
 
+Empty frames show the fion logo, centered.
+
 fion uses the [Dracula](https://draculatheme.com) colors, and adds them for
 xterm to the display's resource database when it starts, along with UTF-8
 whatever the locale, unless your own resources already set them.
