@@ -18,7 +18,6 @@ type Workspace struct {
 	Manager *Manager
 	Screen  *Screen
 
-	Color           uint32
 	WorkspaceWindow xproto.Window
 	InfoBarWindow   xproto.Window
 	InfoBarGC       xproto.Gcontext
@@ -39,7 +38,6 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 	ws := &Workspace{
 		Manager:         screen.wm,
 		Screen:          screen,
-		Color:           0x424242,
 		WorkspaceWindow: w,
 	}
 
@@ -51,7 +49,7 @@ func newWorkspace(screen *Screen) (*Workspace, error) {
 		xproto.WindowClassInputOutput, screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			ws.Color,
+			colorBackground,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -92,8 +90,8 @@ func (ws *Workspace) setupInfoBar() error {
 		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			ws.Screen.Info().BlackPixel,
-			ws.Color, // Set the border color
+			colorBar,
+			colorBorder,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -103,8 +101,8 @@ func (ws *Workspace) setupInfoBar() error {
 	gc, _ := xproto.NewGcontextId(ws.Conn())
 	xproto.CreateGC(ws.Conn(), gc, xproto.Drawable(ws.InfoBarWindow),
 		xproto.GcForeground|xproto.GcBackground, []uint32{
-			ws.Screen.Info().WhitePixel, // text color
-			ws.Screen.Info().BlackPixel, // bg (unused by ImageText8)
+			colorText, // text color
+			colorBar,  // background, of the text drawn by ImageText8
 		},
 	)
 	// Load a core font and bind it to the GC

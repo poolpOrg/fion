@@ -77,7 +77,7 @@ func (wm *Manager) createDragWindow(d *tabDrag) error {
 		d.startX+8, d.startY+8, d.w, 20, 1,
 		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
-		[]uint32{tabActiveColor, scr.BlackPixel, xproto.EventMaskExposure})
+		[]uint32{colorAccent, colorBorder, xproto.EventMaskExposure})
 	xproto.MapWindow(wm.Conn(), w)
 	d.window = w
 	return nil
@@ -92,7 +92,7 @@ func (wm *Manager) drawDragWindow() {
 	}
 	gc := d.frame.barGC
 	xproto.ChangeGC(wm.Conn(), gc, xproto.GcForeground|xproto.GcBackground,
-		[]uint32{tabTextColor, tabActiveColor})
+		[]uint32{colorAccentText, colorAccent})
 	xproto.ImageText8(wm.Conn(), byte(len(title)), xproto.Drawable(d.window), gc, 4, 14, title)
 }
 

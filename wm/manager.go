@@ -60,6 +60,7 @@ func NewManager() (*Manager, error) {
 		wm.Close()
 		return nil, err
 	}
+	wm.installXtermTheme()
 	wm.adoptExisting()
 
 	return wm, nil
@@ -311,9 +312,10 @@ func (wm *Manager) spawn(name string, args ...string) {
 	go cmd.Wait()
 }
 
-// spawnTerminal starts an xterm, which opens in the active frame.
+// spawnTerminal starts an xterm, which opens in the active frame, in the
+// colors installXtermTheme set up.
 func (wm *Manager) spawnTerminal() {
-	wm.spawn("xterm", "-bg", "black", "-fg", "white")
+	wm.spawn("xterm")
 }
 
 // Run is the event loop. All state changes and all drawing happen on this

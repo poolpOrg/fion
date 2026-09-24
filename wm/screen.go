@@ -81,7 +81,7 @@ func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 		screen.existing = tree.Children
 	}
 
-	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{screenInfo.BlackPixel})
+	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{colorBackground})
 	xproto.ClearArea(wm.Conn(), false, screenInfo.Root, 0, 0, screenInfo.WidthInPixels, screenInfo.HeightInPixels)
 
 	if err := screen.initEWMH(); err != nil {

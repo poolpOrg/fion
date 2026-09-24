@@ -11,7 +11,6 @@ type Frame struct {
 	screen    *Screen
 	workspace *Workspace // nil for the scratchpad
 	window    xproto.Window
-	color     uint32
 
 	parent       *Frame
 	children     []*Frame        // for SplitH/SplitV
@@ -48,14 +47,10 @@ func newFrame(screen *Screen, ws *Workspace, parent *Frame, g Geometry) (*Frame,
 		screen:       screen,
 		workspace:    ws,
 		window:       w,
-		color:        defaultColor,
 		parent:       parent,
 		activeClient: -1,
 		g:            g,
 		leaf:         true,
-	}
-	if ws != nil {
-		f.color = ws.Color
 	}
 
 	borderWidth := uint16(0)
@@ -70,8 +65,8 @@ func newFrame(screen *Screen, ws *Workspace, parent *Frame, g Geometry) (*Frame,
 		xproto.WindowClassInputOutput, screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
-			screen.Info().BlackPixel,
-			f.color,
+			colorBackground,
+			colorAccent, // the scratchpad's border
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -154,8 +149,8 @@ func (f *Frame) setuptitleBar() error {
 		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			scr.BlackPixel,
-			f.color, // Set the border color
+			colorBar,
+			colorBorder,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -165,8 +160,8 @@ func (f *Frame) setuptitleBar() error {
 	gc, _ := xproto.NewGcontextId(f.Conn())
 	xproto.CreateGC(f.Conn(), gc, xproto.Drawable(f.titleBar),
 		xproto.GcForeground|xproto.GcBackground, []uint32{
-			scr.WhitePixel, // text color
-			scr.BlackPixel, // bg (unused by ImageText8)
+			colorText, // text color
+			colorBar,  // background, of the text drawn by ImageText8
 		},
 	)
 	// Load a core font and bind it to the GC
@@ -312,16 +307,7 @@ func (f *Frame) AddTab(win xproto.Window) {
 	f.selectClient(len(f.clients) - 1)
 }
 
-// tab bar colors
 const (
-	defaultColor = 0x424242 // background and inactive borders
-
-	tabActiveColor   = 0x335599 // active tab of the active frame
-	tabSelectedColor = 0x555555 // active tab of another frame
-	tabColor         = 0x222222
-	tabTextColor     = 0xffffff
-	tabEmptyColor    = 0x888888
-
 	// width of a character in the "fixed" core font
 	fixedCharWidth = 6
 )
@@ -360,16 +346,16 @@ func (f *Frame) updateTitleBar() {
 	}
 
 	if len(f.clients) == 0 {
-		text(4, "empty", tabEmptyColor, f.screen.Info().BlackPixel)
+		text(4, "empty", colorDim, colorBar)
 	}
 
 	w := f.tabWidth()
 	for i, client := range f.clients {
-		bg := uint32(tabColor)
+		bg, fg := uint32(colorTab), uint32(colorText)
 		if i == f.activeClient {
-			bg = tabSelectedColor
+			bg = colorTabSelected
 			if f.isActive() {
-				bg = tabActiveColor
+				bg, fg = colorAccent, colorAccentText
 			}
 		}
 		x := int16(i * w)
@@ -382,13 +368,13 @@ func (f *Frame) updateTitleBar() {
 		if n := (w - 8) / fixedCharWidth; len(title) > n {
 			title = title[:max(n, 0)]
 		}
-		text(x+4, title, tabTextColor, bg)
+		text(x+4, title, fg, bg)
 	}
 
 	if f.isActive() {
-		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{tabActiveColor})
+		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{colorAccent})
 	} else {
-		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{f.color})
+		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{colorBorder})
 	}
 }
 
