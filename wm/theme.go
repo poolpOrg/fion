@@ -39,10 +39,14 @@ const (
 // xtermResources are the Dracula colors for xterm, from Dracula's
 // Xresources port, and UTF-8 whatever the locale: XQuartz's Xlib, for one,
 // supports none, and xterm then falls back to Latin-1, which scrambles the
-// output of programs drawing with UTF-8, such as btop.
+// output of programs drawing with UTF-8, such as btop, in a font that has
+// its characters.
 var xtermResources = []string{
 	"XTerm*locale: false",
 	"XTerm*utf8: 2",
+	// the Unicode variant of the default font: some xterm builds, such as
+	// Homebrew's, otherwise pick one without braille or block elements
+	"XTerm*font: -misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1",
 	"XTerm*background: #282A36",
 	"XTerm*foreground: #F8F8F2",
 	"XTerm*cursorColor: #F8F8F2",
