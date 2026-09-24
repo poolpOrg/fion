@@ -17,54 +17,75 @@ type Frame struct {
 	clients      []xproto.Window // for Leaf: client windows (tab order)
 	activeClient int             // index into Tabs
 
-	g        Geometry // assigned geometry during layout
+	g        Geometry // relative to the parent window, applied by layout
 	titleBar xproto.Window
 	barGC    xproto.Gcontext
 
 	leaf bool
+
+	// for a split frame: children side by side (splitV) rather than
+	// stacked (splitH)
+	vertical bool
 }
 
 func newRootFrame(ws *Workspace) (*Frame, error) {
 	geom := ws.Screen.Geometry()
+	// leave room for the info bar at the bottom
+	return newFrame(ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - 20})
+}
 
+// newFrame creates an empty leaf frame at g inside parent, or at the top of
+// the workspace when parent is nil. The frame is left unmapped.
+func newFrame(ws *Workspace, parent *Frame, g Geometry) (*Frame, error) {
 	w, err := xproto.NewWindowId(ws.Conn())
 	if err != nil {
 		return nil, err
 	}
 
-	frameGeom := Geometry{
-		X: 0,
-		Y: 0,
-		W: geom.W,
-		H: uint16(ws.Screen.Info().HeightInPixels) - 20,
-	}
-
 	f := &Frame{
 		workspace:    ws,
 		window:       w,
-		parent:       nil,
+		parent:       parent,
 		activeClient: -1,
-		g:            frameGeom,
+		g:            g,
 		leaf:         true,
 	}
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.Info().RootDepth, w, ws.WorkspaceWindow,
-		frameGeom.X, frameGeom.Y, // Position at the bottom
-		frameGeom.W, frameGeom.H, // Adjust height for top and bottom borders
-		0, // Set border width to 1px
+		f.Conn(), ws.Screen.Info().RootDepth, w, f.parentWindow(),
+		g.X, g.Y,
+		g.W, g.H,
+		0,
 		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
-		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
+		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
 			ws.Screen.Info().BlackPixel,
-			ws.Color, // Set the border color
+			ws.Color,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
 
-	f.setuptitleBar()
-
+	if err := f.setuptitleBar(); err != nil {
+		xproto.DestroyWindow(f.Conn(), w)
+		return nil, err
+	}
 	return f, nil
+}
+
+// parentWindow is the X window the frame's window is a child of.
+func (f *Frame) parentWindow() xproto.Window {
+	if f.parent == nil {
+		return f.workspace.WorkspaceWindow
+	}
+	return f.parent.window
+}
+
+// firstLeaf is the top-left leaf of the subtree rooted at f.
+func (f *Frame) firstLeaf() *Frame {
+	for !f.leaf {
+		f = f.children[0]
+	}
+	return f
 }
 
 func (f *Frame) Conn() *xgb.Conn {
@@ -119,6 +140,8 @@ func (f *Frame) setuptitleBar() error {
 	fid, _ := xproto.NewFontId(f.Conn())
 	_ = xproto.OpenFontChecked(f.Conn(), fid, uint16(len("fixed")), "fixed").Check()
 	xproto.ChangeGC(f.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
+	// the GC keeps the font alive, the id is no longer needed
+	xproto.CloseFont(f.Conn(), fid)
 	f.barGC = gc
 
 	f.updateTitleBar()
@@ -143,144 +166,107 @@ func (f *Frame) Unmap() {
 	}
 }
 
+// Destroy destroys the frame's window, and with it those of its subtree,
+// and frees the subtree's graphics contexts.
 func (f *Frame) Destroy() {
+	walk(f, func(n *Frame) {
+		xproto.FreeGC(n.Conn(), n.barGC)
+	})
 	xproto.DestroyWindow(f.Conn(), f.window)
 }
 
-func (f *Frame) split(geom1, geom2 Geometry) error {
-	ws := f.workspace
+// layout applies f.g to the frame's window and carries it down to its title
+// bar, its clients and its children.
+func (f *Frame) layout() {
+	mask := uint16(xproto.ConfigWindowX |
+		xproto.ConfigWindowY |
+		xproto.ConfigWindowWidth |
+		xproto.ConfigWindowHeight)
 
-	f1W, err := xproto.NewWindowId(f.Conn())
+	xproto.ConfigureWindow(f.Conn(), f.window, mask,
+		[]uint32{uint32(f.g.X), uint32(f.g.Y), uint32(f.g.W), uint32(f.g.H)})
+	xproto.ConfigureWindow(f.Conn(), f.titleBar, xproto.ConfigWindowWidth,
+		[]uint32{uint32(f.g.W) - 4})
+
+	for _, client := range f.clients {
+		xproto.ConfigureWindow(f.Conn(), client, mask,
+			[]uint32{0, 22, uint32(f.g.W), uint32(f.g.H) - 22})
+	}
+
+	if !f.leaf {
+		f.children[0].g, f.children[1].g = f.childGeometries()
+		for _, child := range f.children {
+			child.layout()
+		}
+	}
+}
+
+// childGeometries divides a split frame between its two children, in the
+// frame's own coordinates.
+func (f *Frame) childGeometries() (Geometry, Geometry) {
+	if f.vertical {
+		w := f.g.W / 2
+		return Geometry{X: 0, Y: 0, W: w, H: f.g.H},
+			Geometry{X: int16(w), Y: 0, W: f.g.W - w, H: f.g.H}
+	}
+	h := f.g.H / 2
+	return Geometry{X: 0, Y: 0, W: f.g.W, H: h},
+		Geometry{X: 0, Y: int16(h), W: f.g.W, H: f.g.H - h}
+}
+
+// split turns the leaf f into a split frame holding two new leaves: the
+// first one takes over f's clients, the second one becomes active.
+func (f *Frame) split(vertical bool) error {
+	if !f.leaf {
+		return fmt.Errorf("frame is already split")
+	}
+	if (vertical && f.g.W < 256) || (!vertical && f.g.H < 256) {
+		return fmt.Errorf("frame too small to split")
+	}
+
+	f.vertical = vertical
+	g1, g2 := f.childGeometries()
+	f1, err := newFrame(f.workspace, f, g1)
 	if err != nil {
 		return err
 	}
-
-	f2W, err := xproto.NewWindowId(f.Conn())
+	f2, err := newFrame(f.workspace, f, g2)
 	if err != nil {
+		f1.Destroy()
 		return err
 	}
 
-	f1Frame := &Frame{
-		workspace:    f.workspace,
-		window:       f1W,
-		parent:       f,
-		activeClient: -1,
-		g:            geom1,
-		leaf:         true,
-	}
-
-	f2Frame := &Frame{
-		workspace:    f.workspace,
-		window:       f2W,
-		parent:       f,
-		activeClient: -1,
-		g:            geom2,
-		leaf:         true,
-	}
-
-	f.activeClient = -1
-	f.leaf = false
-
-	xproto.CreateWindow(
-		f.Conn(), ws.Screen.Info().RootDepth, f1W, f.window,
-		geom1.X, geom1.Y,
-		geom1.W, geom1.H,
-		0,
-		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
-		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
-		[]uint32{
-			ws.Screen.Info().BlackPixel,
-			ws.Color,
-			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
-		},
-	)
-
-	xproto.CreateWindow(
-		f.Conn(), ws.Screen.Info().RootDepth, f2W, f.window,
-		geom2.X, geom2.Y,
-		geom2.W, geom2.H,
-		0,
-		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
-		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
-		[]uint32{
-			ws.Screen.Info().BlackPixel,
-			ws.Color,
-			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
-		},
-	)
-
-	for _, child := range f.children {
-		child.parent = f1Frame
-	}
 	for _, client := range f.clients {
 		if c, ok := f.workspace.Manager.Clients[client]; ok {
-			c.frame = f1Frame
+			c.frame = f1
 			// reparenting a mapped window unmaps it first
 			attr, err := xproto.GetWindowAttributes(f.Conn(), client).Reply()
 			if err == nil && attr.MapState != xproto.MapStateUnmapped {
 				c.ignoreUnmap++
 			}
 		}
-		f1Frame.clients = append(f1Frame.clients, client)
-		xproto.ReparentWindow(f.Conn(), client, f1Frame.window, 0, 20)
-		mask := uint16(xproto.ConfigWindowX |
-			xproto.ConfigWindowY |
-			xproto.ConfigWindowWidth |
-			xproto.ConfigWindowHeight)
-		vals := []uint32{0, 22, uint32(geom1.W), uint32(geom1.H) - 22}
-		xproto.ConfigureWindow(f.Conn(), client, mask, vals)
+		xproto.ReparentWindow(f.Conn(), client, f1.window, 0, 22)
 	}
-	f.clients = nil
-	f.activeClient = -1
+	f1.clients, f1.activeClient = f.clients, f.activeClient
+	f.clients, f.activeClient = nil, -1
 
-	f1Frame.setuptitleBar()
-	f2Frame.setuptitleBar()
-	f1Frame.Map()
-	f2Frame.Map()
-	f.children = []*Frame{f1Frame, f2Frame}
-	f.workspace.ActiveFrame = f2Frame
+	f.leaf = false
+	f.children = []*Frame{f1, f2}
+	f1.layout()
+	f1.Map()
+	f2.Map()
+
+	f.workspace.ActiveFrame = f2
+	f.workspace.updateTitleBars()
 	return nil
 }
 
 func (f *Frame) splitH() error {
-	if f.g.H < 256 {
-		return fmt.Errorf("frame too small to split")
-	}
-
-	halfH := f.g.H / 2
-	topGeom := Geometry{
-		X: 0,
-		Y: 0,
-		W: f.g.W,
-		H: halfH,
-	}
-	bottomGeom := Geometry{
-		X: 0,
-		Y: int16(halfH),
-		W: f.g.W,
-		H: halfH,
-	}
-	return f.split(topGeom, bottomGeom)
+	return f.split(false)
 }
 
 func (f *Frame) splitV() error {
-	if f.g.W < 256 {
-		return fmt.Errorf("frame too small to split")
-	}
-	halfW := f.g.W / 2
-	leftGeom := Geometry{
-		X: 0,
-		Y: 0,
-		W: halfW,
-		H: f.g.H,
-	}
-	rightGeom := Geometry{
-		X: int16(halfW),
-		Y: 0,
-		W: halfW,
-		H: f.g.H,
-	}
-	return f.split(leftGeom, rightGeom)
+	return f.split(true)
 }
 
 func (f *Frame) AddTab(win xproto.Window) {
@@ -345,40 +331,48 @@ func (f *Frame) GetActiveClient() xproto.Window {
 	return f.clients[f.activeClient]
 }
 
-func (f *Frame) RemoveChild(child *Frame) {
-	if f == nil || f.Leaf() || len(f.children) != 2 {
-		return
+// RemoveChild removes the empty leaf child from the split frame f. Its
+// sibling takes f's place in the tree and grows into f's geometry.
+func (f *Frame) RemoveChild(child *Frame) error {
+	if f.leaf || len(f.children) != 2 {
+		return fmt.Errorf("frame is not split")
 	}
 
 	var sibling *Frame
-	if f.children[0] == child {
+	switch child {
+	case f.children[0]:
 		sibling = f.children[1]
-	} else if f.children[1] == child {
+	case f.children[1]:
 		sibling = f.children[0]
-	} else {
-		return // `child` not found under `f`
+	default:
+		return fmt.Errorf("frame is not a child of this frame")
+	}
+	if !child.leaf || len(child.clients) != 0 {
+		return fmt.Errorf("frame is not empty")
 	}
 
-	sibling.g = f.g
+	ws := f.workspace
 	sibling.parent = f.parent
-	if sibling.parent == nil {
-		f.workspace.Root = sibling
+	sibling.g = f.g
+	if f.parent == nil {
+		ws.Root = sibling
+	} else {
+		for i, c := range f.parent.children {
+			if c == f {
+				f.parent.children[i] = sibling
+			}
+		}
 	}
-	f.workspace.ActiveFrame = sibling
-	f.children = nil
-	f.clients = nil
+	xproto.ReparentWindow(f.Conn(), sibling.window, sibling.parentWindow(), sibling.g.X, sibling.g.Y)
+	sibling.layout()
 
-	xproto.ReparentWindow(f.Conn(), sibling.GetWindow(), f.workspace.WorkspaceWindow, 0, 0)
-	mask := uint16(xproto.ConfigWindowX |
-		xproto.ConfigWindowY |
-		xproto.ConfigWindowWidth |
-		xproto.ConfigWindowHeight)
-	vals := []uint32{0, 0, uint32(f.g.W), uint32(f.g.H)}
-	xproto.ConfigureWindow(f.Conn(), sibling.GetWindow(), mask, vals)
+	// the sibling is out of f's window: destroying f only takes f and child
+	f.children = []*Frame{child}
+	f.Destroy()
 
-	f.workspace.updateTitleBars()
-	f.Unmap()
-	child.Unmap()
+	ws.ActiveFrame = sibling.firstLeaf()
+	ws.updateTitleBars()
+	return nil
 }
 
 func (f *Frame) RemoveClient(client xproto.Window) {

@@ -457,8 +457,9 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 			if client != 0 {
 				wm.unmanageWindow(client)
 			} else if frame.GetParent() != nil {
-				parent := frame.GetParent()
-				parent.RemoveChild(frame)
+				if err := frame.GetParent().RemoveChild(frame); err != nil {
+					log.Printf("remove frame: %v", err)
+				}
 			} else {
 				wm.GetActiveScreen().removeWorkspace()
 			}
