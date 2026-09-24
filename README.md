@@ -2,51 +2,91 @@
 
 ![](fion.jpg)
 
-repository for the fion window manager
+fion is a static tiling window manager for X11, inspired by
+[ion](https://tuomov.iki.fi/software/ion/), written in Go on top of
+[xgb](https://github.com/jezek/xgb).
 
-**THIS IS A WORK IN PROGRESS, IT IS NOT WORKING YET !**
-
-
-
-![fion](https://poolp.org/posts/2019-08-25/august-2019-report-fion-plakar-and-opensmtpd/cover.jpg)
-
-description
---
-fion is a static tiling window manager inspired by ion.
+**This is a work in progress: it runs, but it is not usable as a daily
+window manager yet.**
 
 
 design
 --
-Fion assigns one or many workspaces to a screen and will always display an active workspace at a given time.
-A workspace will always contain at least one tile filling it up entirely.
-Tiles may be split horizontally or vertically.
+Each X screen holds one or more workspaces, and always shows one of them.
+A workspace is a tree of frames: it starts as a single frame filling it,
+and any frame can be split in two, stacked or side by side.
+Leaf frames hold X clients as tabs, listed in the frame's title bar.
+
+A bar at the bottom of each workspace shows the screen and workspace
+numbers, CPU and memory usage and the time.
 
 
-currently implemented
+building
 --
-- detects and configures multiple screens
-- assigns a default workspace and default tile to each screen
-- as many workspaces as wanted on each screen
-- as many tiles as wanted on each workspace
-- keyboard shortcuts to create / destroy / switch between next and previous workspace
-- keyboard shortcuts to split horizontally & vertically / destroy / switch between next and previous tile
-- keyboard shortcut to run terminal
-- notion of current workspace and current tile on each screen
-- attaches X client to the proper place
-- focus is given to a tile either through keyboard shortcuts or by moving cursor
-- event loop implements a tick to update layout even in the lack of events
+fion needs Go 1.25 or later:
+
+    $ go build ./cmd/fion
 
 
-missing
+key bindings
 --
-- window management should work when focus is on a terminal, hijacking key strokes
-- tiles management is not finished: creating / splitting / iterating works fine but destroying breaks the layout
-- framing inside tiles so that it is possible to iterate between X clients attached to the same tile
-- splitting tiles halves the parent tile, support for resizing should be implemented
-- a cross workspace tile should be implemented, similar to ion's alt-space tile
+Bindings use a prefix: press `Super+w` or `Super+f`, release, then press the
+action key without any modifier.
+
+| keys                 | action                                              |
+|----------------------|-----------------------------------------------------|
+| `Super+w` `c`        | create a workspace                                  |
+| `Super+w` `n` / `p`  | next / previous workspace                           |
+| `Super+w` `h`        | split the active frame top / bottom                 |
+| `Super+w` `v`        | split the active frame left / right                 |
+| `Super+w` `d`        | close the active client; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
+| `Super+f` `n` / `p`  | next / previous frame                               |
+| `F2`                 | start an xterm                                      |
+| `Super+Escape`       | quit fion                                           |
+
+Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
+modifier than Super.
 
 
-obligatory screenshots
+running it nested
 --
-![1](https://poolp.org/images/2019-06-30-fion_1.png)
-![2](https://poolp.org/images/2019-06-30-fion_2.png)
+The easiest way to try fion is inside Xephyr:
+
+    $ Xephyr :1 -screen 1280x800 &
+    $ DISPLAY=:1 ./fion &
+    $ DISPLAY=:1 xterm &
+
+On macOS, with XQuartz, Xephyr can't create its socket in `/tmp/.X11-unix`
+without root, and XQuartz has no Super key, so listen on TCP and use Ctrl:
+
+    $ Xephyr :1 -screen 1280x800 -nolisten unix -nolisten local -listen tcp -ac &
+    $ DISPLAY=127.0.0.1:1 FION_MODIFIER=ctrl ./fion
+
+
+tests
+--
+The frame tree tests need an X server fion can manage, such as Xvfb, named
+by `FION_TEST_DISPLAY`; they are skipped otherwise:
+
+    $ Xvfb :99 &
+    $ FION_TEST_DISPLAY=:99 go test ./wm
+
+
+known limitations
+--
+- keys are not grabbed: bindings only reach fion when the pointer is over a
+  title bar, the bar or an empty frame, not over a client
+- input focus is not managed, it follows the pointer
+- all the tabs of a frame are shown on top of each other, there is no way
+  to switch between them yet
+- splitting halves a frame, frames can't be resized
+- every window is tiled, dialogs and transient windows included, and
+  windows that exist when fion starts are not managed
+- ConfigureRequest events are ignored
+- `Super+w` `d` destroys the client window instead of asking it to close
+- only the X screens are handled, not RandR outputs: on a multi-monitor
+  setup a workspace spans all the monitors
+- after removing a workspace, the one marked active may not be the one
+  shown
+- window titles are read from `WM_NAME` only, UTF-8 titles show empty
+- EWMH support is limited to announcing the window manager
