@@ -173,7 +173,7 @@ func (k *KeyboardManager) Conn() *xgb.Conn {
 
 // grabbed on every root, whatever the window under the pointer: the
 // prefixes, the scratchpad, the terminal and quit, all with Mod
-var boundKeys = []xproto.Keysym{XK_w, XK_f, XK_k, XK_Space, XK_F2, XK_Escape}
+var boundKeys = []xproto.Keysym{XK_w, XK_f, XK_t, XK_Space, XK_F2, XK_Escape}
 
 // GrabBindings (re)establishes the passive grabs for the bindings on every
 // root. Grabs are held on keycodes, so they must be redone when the keyboard

@@ -463,7 +463,7 @@ func (wm *Manager) closeActive() error {
 	return nil
 }
 
-// handleKeyPress implements the prefix bindings (Mod+w, Mod+f, Mod+k) and
+// handleKeyPress implements the prefix bindings (Mod+w, Mod+f, Mod+t) and
 // reports whether the user asked to quit.
 //
 // The prefixes and Mod+Escape are grabbed on the root, so they reach fion
@@ -478,13 +478,13 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 
 	log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
 
-	if mods == km.Mod && (sym == XK_w || sym == XK_f || sym == XK_k) {
+	if mods == km.Mod && (sym == XK_w || sym == XK_f || sym == XK_t) {
 		switch sym {
 		case XK_w:
 			wm.mode = M_Workspace
 		case XK_f:
 			wm.mode = M_Frame
-		case XK_k:
+		case XK_t:
 			wm.mode = M_Client
 		}
 		if err := km.GrabKeyboard(ev.Root); err != nil {

@@ -49,7 +49,7 @@ action key without any modifier.
 | `Super+w` `v`        | split the active frame left / right                 |
 | `Super+w` `d`        | close the active client; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
 | `Super+f` `n` / `p`  | next / previous frame                               |
-| `Super+k` `n` / `p`  | next / previous tab in the active frame             |
+| `Super+t` `n` / `p`  | next / previous tab in the active frame             |
 | `Super+space`        | show / hide the scratchpad                          |
 | `Super+F2`           | start an xterm, in the active frame                 |
 | `F2`                 | start an xterm, when the pointer is not over a window |
