@@ -161,6 +161,7 @@ func (ws *Workspace) Map() {
 	}
 	ws.Root.Map()
 	xproto.MapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
+	ws.Screen.raiseScratchpad()
 }
 
 func (ws *Workspace) Unmap() {

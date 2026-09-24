@@ -17,6 +17,9 @@ type Screen struct {
 	Workspaces []*Workspace
 
 	activeWorkspaceIdx int
+
+	scratchpad      *Frame // created the first time it is shown
+	scratchpadShown bool
 }
 
 type atoms struct {
@@ -131,6 +134,16 @@ func (s *Screen) setPropAtoms(win xproto.Window, prop xproto.Atom, atoms []xprot
 		binary.LittleEndian.PutUint32(buf[i*4:(i+1)*4], uint32(a))
 	}
 	xproto.ChangeProperty(s.Conn(), xproto.PropModeReplace, win, prop, xproto.AtomAtom, 32, uint32(len(atoms)), buf)
+}
+
+// updateTitleBars redraws the title bars of every frame on the screen.
+func (s *Screen) updateTitleBars() {
+	for _, ws := range s.Workspaces {
+		ws.updateTitleBars()
+	}
+	if s.scratchpad != nil {
+		s.scratchpad.updateTitleBar()
+	}
 }
 
 func (s *Screen) GetActiveWorkspace() *Workspace {

@@ -8,8 +8,10 @@ import (
 )
 
 type Frame struct {
-	workspace *Workspace
+	screen    *Screen
+	workspace *Workspace // nil for the scratchpad
 	window    xproto.Window
+	color     uint32
 
 	parent       *Frame
 	children     []*Frame        // for SplitH/SplitV
@@ -30,36 +32,46 @@ type Frame struct {
 func newRootFrame(ws *Workspace) (*Frame, error) {
 	geom := ws.Screen.Geometry()
 	// leave room for the info bar at the bottom
-	return newFrame(ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - 20})
+	return newFrame(ws.Screen, ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - 20})
 }
 
-// newFrame creates an empty leaf frame at g inside parent, or at the top of
-// the workspace when parent is nil. The frame is left unmapped.
-func newFrame(ws *Workspace, parent *Frame, g Geometry) (*Frame, error) {
-	w, err := xproto.NewWindowId(ws.Conn())
+// newFrame creates an empty leaf frame at g inside parent, at the top of the
+// workspace ws when parent is nil, or floating on the screen's root when ws
+// is nil too. The frame is left unmapped.
+func newFrame(screen *Screen, ws *Workspace, parent *Frame, g Geometry) (*Frame, error) {
+	w, err := xproto.NewWindowId(screen.Conn())
 	if err != nil {
 		return nil, err
 	}
 
 	f := &Frame{
+		screen:       screen,
 		workspace:    ws,
 		window:       w,
+		color:        defaultColor,
 		parent:       parent,
 		activeClient: -1,
 		g:            g,
 		leaf:         true,
 	}
+	if ws != nil {
+		f.color = ws.Color
+	}
 
+	borderWidth := uint16(0)
+	if f.floating() {
+		borderWidth = 1
+	}
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.Info().RootDepth, w, f.parentWindow(),
+		f.Conn(), screen.Info().RootDepth, w, f.parentWindow(),
 		g.X, g.Y,
 		g.W, g.H,
-		0,
-		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
+		borderWidth,
+		xproto.WindowClassInputOutput, screen.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{
-			ws.Screen.Info().BlackPixel,
-			ws.Color,
+			screen.Info().BlackPixel,
+			f.color,
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -73,10 +85,19 @@ func newFrame(ws *Workspace, parent *Frame, g Geometry) (*Frame, error) {
 
 // parentWindow is the X window the frame's window is a child of.
 func (f *Frame) parentWindow() xproto.Window {
-	if f.parent == nil {
-		return f.workspace.WorkspaceWindow
+	switch {
+	case f.parent != nil:
+		return f.parent.window
+	case f.floating():
+		return f.screen.Info().Root
 	}
-	return f.parent.window
+	return f.workspace.WorkspaceWindow
+}
+
+// floating reports whether f floats above the workspaces rather than being
+// tiled in one: the scratchpad.
+func (f *Frame) floating() bool {
+	return f.workspace == nil
 }
 
 // firstLeaf is the top-left leaf of the subtree rooted at f.
@@ -92,12 +113,16 @@ func (f *Frame) Conn() *xgb.Conn {
 }
 
 func (f *Frame) wm() *Manager {
-	return f.workspace.Manager
+	return f.screen.wm
 }
 
-// isActive reports whether f is the frame the bindings act on.
+// isActive reports whether f is the frame the bindings act on: the
+// scratchpad when it is shown, the workspace's active frame otherwise.
 func (f *Frame) isActive() bool {
-	return f.workspace.ActiveFrame == f
+	if f.floating() {
+		return f.screen.scratchpadShown
+	}
+	return f.workspace.ActiveFrame == f && !f.screen.scratchpadShown
 }
 
 func (f *Frame) GetWindow() xproto.Window {
@@ -113,7 +138,7 @@ func (f *Frame) Leaf() bool {
 }
 
 func (f *Frame) setuptitleBar() error {
-	ws := f.workspace
+	scr := f.screen.Info()
 	geom := f.g
 
 	w, err := xproto.NewWindowId(f.Conn())
@@ -122,15 +147,15 @@ func (f *Frame) setuptitleBar() error {
 	}
 
 	xproto.CreateWindow(
-		f.Conn(), ws.Screen.Info().RootDepth, w, f.window,
+		f.Conn(), scr.RootDepth, w, f.window,
 		0, 0, // Position at the bottom
 		geom.W-4, 20, // Adjust height for top and bottom borders
 		1, // Set border width to 1px
-		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
+		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
 		[]uint32{
-			f.workspace.Screen.Info().BlackPixel,
-			f.workspace.Color, // Set the border color
+			scr.BlackPixel,
+			f.color, // Set the border color
 			xproto.EventMaskExposure | xproto.EventMaskButtonPress,
 		},
 	)
@@ -140,8 +165,8 @@ func (f *Frame) setuptitleBar() error {
 	gc, _ := xproto.NewGcontextId(f.Conn())
 	xproto.CreateGC(f.Conn(), gc, xproto.Drawable(f.titleBar),
 		xproto.GcForeground|xproto.GcBackground, []uint32{
-			f.workspace.Screen.Info().WhitePixel, // text color
-			f.workspace.Screen.Info().BlackPixel, // bg (unused by ImageText8)
+			scr.WhitePixel, // text color
+			scr.BlackPixel, // bg (unused by ImageText8)
 		},
 	)
 	// Load a core font and bind it to the GC
@@ -227,6 +252,9 @@ func (f *Frame) childGeometries() (Geometry, Geometry) {
 // split turns the leaf f into a split frame holding two new leaves: the
 // first one takes over f's clients, the second one becomes active.
 func (f *Frame) split(vertical bool) error {
+	if f.floating() {
+		return fmt.Errorf("the scratchpad can't be split")
+	}
 	if !f.leaf {
 		return fmt.Errorf("frame is already split")
 	}
@@ -236,11 +264,11 @@ func (f *Frame) split(vertical bool) error {
 
 	f.vertical = vertical
 	g1, g2 := f.childGeometries()
-	f1, err := newFrame(f.workspace, f, g1)
+	f1, err := newFrame(f.screen, f.workspace, f, g1)
 	if err != nil {
 		return err
 	}
-	f2, err := newFrame(f.workspace, f, g2)
+	f2, err := newFrame(f.screen, f.workspace, f, g2)
 	if err != nil {
 		f1.Destroy()
 		return err
@@ -286,6 +314,8 @@ func (f *Frame) AddTab(win xproto.Window) {
 
 // tab bar colors
 const (
+	defaultColor = 0x424242 // background and inactive borders
+
 	tabActiveColor   = 0x335599 // active tab of the active frame
 	tabSelectedColor = 0x555555 // active tab of another frame
 	tabColor         = 0x222222
@@ -330,7 +360,7 @@ func (f *Frame) updateTitleBar() {
 	}
 
 	if len(f.clients) == 0 {
-		text(4, "empty", tabEmptyColor, f.workspace.Screen.Info().BlackPixel)
+		text(4, "empty", tabEmptyColor, f.screen.Info().BlackPixel)
 	}
 
 	w := f.tabWidth()
@@ -358,7 +388,7 @@ func (f *Frame) updateTitleBar() {
 	if f.isActive() {
 		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{tabActiveColor})
 	} else {
-		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{f.workspace.Color})
+		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{f.color})
 	}
 }
 
@@ -392,6 +422,9 @@ func (f *Frame) selectClient(i int) {
 	f.activeClient = i
 	f.showActiveClient()
 	f.updateTitleBar()
+	if f.floating() {
+		f.wm().updateFocus()
+	}
 }
 
 // showActiveClient maps the active tab and unmaps the others.

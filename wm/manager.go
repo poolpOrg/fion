@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jezek/xgb"
-	"github.com/jezek/xgb/randr"
 	"github.com/jezek/xgb/xproto"
 )
 
@@ -141,6 +140,9 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	c.frame.RemoveClient(win)
 	c.frame.showActiveClient()
 	c.frame.updateTitleBar()
+	if c.frame.floating() {
+		wm.updateFocus()
+	}
 	return c
 }
 
@@ -176,7 +178,7 @@ func (wm *Manager) handleUnmapNotify(ev xproto.UnmapNotifyEvent) {
 	// A client that exits unmaps its window just before destroying it, so
 	// the window is often gone already: check these requests and drop the
 	// errors rather than have them reported as X errors by the event loop.
-	root := c.frame.workspace.Screen.Info().Root
+	root := c.frame.screen.Info().Root
 	_ = xproto.ChangeWindowAttributesChecked(wm.Conn(), ev.Window, xproto.CwEventMask, []uint32{xproto.EventMaskNoEvent}).Check()
 	_ = xproto.ReparentWindowChecked(wm.Conn(), ev.Window, root, 0, 0).Check()
 	_ = xproto.ChangeSaveSetChecked(wm.Conn(), xproto.SetModeDelete, ev.Window).Check()
@@ -201,9 +203,6 @@ func (wm *Manager) Close() {
 }
 
 func (wm *Manager) initScreens() error {
-	if err := randr.Init(wm.xConn); err != nil {
-		return err
-	}
 	for _, scr := range xproto.Setup(wm.xConn).Roots {
 		screen, err := newScreen(wm, scr)
 		if err != nil {
@@ -233,6 +232,9 @@ func (wm *Manager) GetActiveFrame() *Frame {
 	sc := wm.GetActiveScreen()
 	if sc == nil {
 		return nil
+	}
+	if sc.scratchpadShown {
+		return sc.scratchpad
 	}
 	return sc.GetActiveWorkspace().GetActiveFrame()
 }
@@ -314,8 +316,8 @@ func (wm *Manager) Run() error {
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
 					ws.updateInfoBar()
-					ws.updateTitleBars()
 				}
+				s.updateTitleBars()
 			}
 
 		case ev, ok := <-events:
@@ -346,8 +348,8 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 				if ev.Window == ws.InfoBarWindow {
 					ws.updateInfoBar()
 				}
-				ws.updateTitleBars()
 			}
+			s.updateTitleBars()
 		}
 	case xproto.MapRequestEvent:
 		wm.tryManage(ev.Window)
@@ -410,11 +412,31 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 
 // clickTitleBar makes f the active frame and selects the tab at x.
 func (wm *Manager) clickTitleBar(f *Frame, x int16) {
-	f.workspace.ActiveFrame = f
+	if !f.floating() {
+		f.workspace.ActiveFrame = f
+	}
 	if i := f.tabAt(x); i >= 0 {
 		f.selectClient(i)
 	}
-	f.workspace.updateTitleBars()
+	f.screen.updateTitleBars()
+}
+
+// closeActive closes the active client or, in an empty frame, removes the
+// frame, or in the last frame of a workspace, the workspace.
+func (wm *Manager) closeActive() error {
+	frame := wm.GetActiveFrame()
+	if client := frame.GetActiveClient(); client != 0 {
+		wm.unmanageWindow(client)
+		return nil
+	}
+	switch {
+	case frame.floating():
+		return fmt.Errorf("the scratchpad can't be removed")
+	case frame.parent != nil:
+		return frame.parent.RemoveChild(frame)
+	}
+	wm.GetActiveScreen().removeWorkspace()
+	return nil
 }
 
 // handleKeyPress implements the prefix bindings (Mod+w, Mod+f, Mod+k) and
@@ -449,6 +471,12 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	if mods == km.Mod && sym == XK_Escape {
 		return true
 	}
+	if mods == km.Mod && sym == XK_Space {
+		if err := wm.GetActiveScreen().toggleScratchpad(); err != nil {
+			log.Printf("scratchpad: %v", err)
+		}
+		return false
+	}
 
 	// pressing Shift or releasing Mod and pressing it again doesn't
 	// complete a prefix
@@ -467,8 +495,6 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 
 	if mode == 0 {
 		switch sym {
-		case XK_Space:
-			fmt.Println("TODO: SCRATCHPAD")
 		case XK_F1:
 			fmt.Println("TODO: browser")
 		case XK_F2:
@@ -493,22 +519,18 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 			old.Unmap()
 
 		case XK_d:
-			frame := wm.GetActiveFrame()
-			client := wm.GetActiveClient()
-			if client != 0 {
-				wm.unmanageWindow(client)
-			} else if frame.GetParent() != nil {
-				if err := frame.GetParent().RemoveChild(frame); err != nil {
-					log.Printf("remove frame: %v", err)
-				}
-			} else {
-				wm.GetActiveScreen().removeWorkspace()
+			if err := wm.closeActive(); err != nil {
+				log.Printf("close: %v", err)
 			}
 		case XK_h:
-			wm.GetActiveWorkspace().splitH()
+			if err := wm.GetActiveFrame().splitH(); err != nil {
+				log.Printf("split: %v", err)
+			}
 
 		case XK_v:
-			wm.GetActiveWorkspace().splitV()
+			if err := wm.GetActiveFrame().splitV(); err != nil {
+				log.Printf("split: %v", err)
+			}
 
 		case XK_p:
 			old := wm.GetActiveWorkspace()
@@ -528,25 +550,22 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		}
 	}
 
+	// the tiled frames are behind the scratchpad while it is shown
+	if mode == M_Frame && wm.GetActiveScreen().scratchpadShown {
+		log.Printf("the scratchpad is shown, frame cycling ignored")
+		mode = 0
+	}
 	if mode == M_Frame {
 		switch sym {
 		case XK_p:
 			fmt.Println("previous workspace")
 			wm.GetActiveWorkspace().cycleFrameLeft()
-			for _, s := range wm.Screens {
-				for _, ws := range s.Workspaces {
-					ws.updateTitleBars()
-				}
-			}
+			wm.GetActiveScreen().updateTitleBars()
 
 		case XK_n:
 			fmt.Println("nextworkspace")
 			wm.GetActiveWorkspace().cycleFrameRight()
-			for _, s := range wm.Screens {
-				for _, ws := range s.Workspaces {
-					ws.updateTitleBars()
-				}
-			}
+			wm.GetActiveScreen().updateTitleBars()
 		}
 	}
 

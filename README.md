@@ -15,7 +15,14 @@ design
 Each X screen holds one or more workspaces, and always shows one of them.
 A workspace is a tree of frames: it starts as a single frame filling it,
 and any frame can be split in two, stacked or side by side.
-Leaf frames hold X clients as tabs, listed in the frame's title bar.
+Leaf frames hold X clients as tabs: the frame's title bar has one tab per
+client, and only the active one is shown.
+
+Each screen also has a scratchpad, as in ion: a frame floating centered
+above the workspaces, that `Super+space` shows and hides.  It stays shown
+when switching workspaces.  While it is shown, it is the active frame: new
+windows open in it, the tab bindings act on it and it has the keyboard
+focus.  It can't be split or removed.
 
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, CPU and memory usage and the time.
@@ -41,8 +48,12 @@ action key without any modifier.
 | `Super+w` `v`        | split the active frame left / right                 |
 | `Super+w` `d`        | close the active client; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
 | `Super+f` `n` / `p`  | next / previous frame                               |
+| `Super+k` `n` / `p`  | next / previous tab in the active frame             |
+| `Super+space`        | show / hide the scratchpad                          |
 | `F2`                 | start an xterm                                      |
 | `Super+Escape`       | quit fion                                           |
+
+Clicking a tab selects it and its frame.
 
 Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
 modifier than Super.
@@ -76,11 +87,12 @@ known limitations
 --
 - `F2` is not grabbed, so that applications keep it: it only starts an
   xterm when the pointer is not over a client
-- input focus is not managed, it follows the pointer
-- all the tabs of a frame are shown on top of each other, there is no way
-  to switch between them yet
+- input focus is only given to the scratchpad; elsewhere it follows the
+  pointer
+- windows can't be moved between frames, so the scratchpad only holds the
+  windows opened while it is shown
 - splitting halves a frame, frames can't be resized
-- every window is tiled, dialogs and transient windows included, and
+- every window gets a tab, dialogs and transient windows included, and
   windows that exist when fion starts are not managed
 - ConfigureRequest events are ignored
 - `Super+w` `d` destroys the client window instead of asking it to close
@@ -88,5 +100,5 @@ known limitations
   setup a workspace spans all the monitors
 - after removing a workspace, the one marked active may not be the one
   shown
-- window titles are read from `WM_NAME` only, UTF-8 titles show empty
+- tab titles are read from `WM_NAME` only, UTF-8 titles show empty
 - EWMH support is limited to announcing the window manager
