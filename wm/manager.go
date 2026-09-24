@@ -287,7 +287,7 @@ func (wm *Manager) spawn(name string, args ...string) {
 // goroutine, so the workspace and frame trees need no locking.
 func (wm *Manager) Run() error {
 
-	base := wm.KeyboardManager.Super
+	base := wm.KeyboardManager.Mod
 	for _, scr := range wm.Screens {
 		_ = wm.KeyboardManager.GrabNamed(scr.Info().Root, "F9", base)
 	}
@@ -303,7 +303,7 @@ func (wm *Manager) Run() error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	log.Printf("fion running on %q — Super+Escape quits", os.Getenv("DISPLAY"))
+	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
 
 	for {
 		select {
@@ -406,15 +406,15 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 
 	log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
 
-	if mods == km.Super && sym == XK_w {
+	if mods == km.Mod && sym == XK_w {
 		wm.mode = M_Workspace
 		return false
 	}
-	if mods == km.Super && sym == XK_f {
+	if mods == km.Mod && sym == XK_f {
 		wm.mode = M_Frame
 		return false
 	}
-	if mods == km.Super && sym == XK_Escape {
+	if mods == km.Mod && sym == XK_Escape {
 		return true
 	}
 

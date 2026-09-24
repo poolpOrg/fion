@@ -2,6 +2,9 @@ package wm
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"strings"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -88,16 +91,39 @@ const (
 )
 
 type KeyboardManager struct {
-	wm    *Manager
-	Super uint16 // actual Mod* bit for Super
-	Num   uint16 // NumLock mask
-	Mode  uint16 // Mode_switch (AltGr) mask
+	wm      *Manager
+	Mod     uint16 // modifier for the bindings, Super by default
+	ModName string
+	Num     uint16 // NumLock mask
+	Mode    uint16 // Mode_switch (AltGr) mask
+}
+
+// modifiers FION_MODIFIER may name
+var modifierMasks = map[string]uint16{
+	"ctrl":    xproto.ModMaskControl,
+	"control": xproto.ModMaskControl,
+	"alt":     xproto.ModMask1,
+	"mod1":    xproto.ModMask1,
+	"mod2":    xproto.ModMask2,
+	"mod3":    xproto.ModMask3,
+	"mod4":    xproto.ModMask4,
+	"mod5":    xproto.ModMask5,
 }
 
 func NewKeyboardManager(wm *Manager) *KeyboardManager {
 	k := &KeyboardManager{wm: wm}
-	k.Super = k.detectSuperMask()
+	k.Mod, k.ModName = k.detectSuperMask(), "Super"
 	k.Num, k.Mode = k.detectModifierMasks()
+
+	// FION_MODIFIER picks another modifier, for when fion runs nested under
+	// a host that keeps Super to itself (or, like XQuartz, has none).
+	if name := os.Getenv("FION_MODIFIER"); name != "" {
+		if mask, ok := modifierMasks[strings.ToLower(name)]; ok {
+			k.Mod, k.ModName = mask, name
+		} else {
+			log.Printf("FION_MODIFIER: unknown modifier %q, using Super", name)
+		}
+	}
 	return k
 }
 
