@@ -290,6 +290,11 @@ func (wm *Manager) spawn(name string, args ...string) {
 	go cmd.Wait()
 }
 
+// spawnTerminal starts an xterm, which opens in the active frame.
+func (wm *Manager) spawnTerminal() {
+	wm.spawn("xterm", "-bg", "black", "-fg", "white")
+}
+
 // Run is the event loop. All state changes and all drawing happen on this
 // goroutine, so the workspace and frame trees need no locking.
 func (wm *Manager) Run() error {
@@ -490,6 +495,10 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	if mods == km.Mod && sym == XK_Escape {
 		return true
 	}
+	if mods == km.Mod && sym == XK_F2 {
+		wm.spawnTerminal()
+		return false
+	}
 	if mods == km.Mod && sym == XK_Space {
 		if err := wm.GetActiveScreen().toggleScratchpad(); err != nil {
 			log.Printf("scratchpad: %v", err)
@@ -517,7 +526,7 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		case XK_F1:
 			fmt.Println("TODO: browser")
 		case XK_F2:
-			wm.spawn("xterm", "-bg", "black", "-fg", "white")
+			wm.spawnTerminal()
 		}
 	}
 

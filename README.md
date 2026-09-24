@@ -22,7 +22,8 @@ Each screen also has a scratchpad, as in ion: a frame floating centered
 above the workspaces, that `Super+space` shows and hides.  It stays shown
 when switching workspaces.  While it is shown, it is the active frame: new
 windows open in it, the tab bindings act on it and it has the keyboard
-focus.  It can't be split or removed.
+focus.  It can't be split or removed.  To fill it, show it and start
+windows, `Super+F2` for a terminal, or drag tabs onto it.
 
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, CPU and memory usage and the time.
@@ -50,7 +51,8 @@ action key without any modifier.
 | `Super+f` `n` / `p`  | next / previous frame                               |
 | `Super+k` `n` / `p`  | next / previous tab in the active frame             |
 | `Super+space`        | show / hide the scratchpad                          |
-| `F2`                 | start an xterm                                      |
+| `Super+F2`           | start an xterm, in the active frame                 |
+| `F2`                 | start an xterm, when the pointer is not over a window |
 | `Super+Escape`       | quit fion                                           |
 
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
@@ -87,8 +89,6 @@ by `FION_TEST_DISPLAY`; they are skipped otherwise:
 
 known limitations
 --
-- `F2` is not grabbed, so that applications keep it: it only starts an
-  xterm when the pointer is not over a client
 - input focus is only given to the scratchpad; elsewhere it follows the
   pointer
 - windows can only be moved between frames with the mouse
