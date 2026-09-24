@@ -28,7 +28,8 @@ windows, `Super+F2` for a terminal, or drag tabs onto it.
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, CPU and memory usage and the time.
 
-Empty frames are black and show the fion logo, centered.
+Empty frames are black; a workspace that is a single empty frame shows the
+fion logo, centered.
 
 fion uses the [Dracula](https://draculatheme.com) colors, and adds them for
 xterm to the display's resource database when it starts, along with UTF-8

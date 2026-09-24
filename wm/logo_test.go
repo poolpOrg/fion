@@ -38,26 +38,59 @@ func TestLogoMask(t *testing.T) {
 	}
 }
 
-func TestEmptyFrameShowsLogo(t *testing.T) {
-	wm := newTestManager(t)
-	drainEvents(t, wm)
-	f := wm.GetActiveFrame()
-
-	// the middle band of the frame, below its title bar
+// logoPixels counts the pixels of the logo's color in the middle band of
+// f, below its title bar.
+func logoPixels(t *testing.T, f *Frame) int {
+	t.Helper()
 	y := int16(22 + (int(f.g.H)-22)/2 - 50)
-	img, err := xproto.GetImage(wm.Conn(), xproto.ImageFormatZPixmap, xproto.Drawable(f.window),
+	img, err := xproto.GetImage(f.Conn(), xproto.ImageFormatZPixmap, xproto.Drawable(f.window),
 		0, y, f.g.W, 100, ^uint32(0)).Reply()
 	if err != nil {
 		t.Fatal(err)
 	}
-	logoPixels := 0
+	n := 0
 	for i := 0; i+3 < len(img.Data); i += 4 {
 		c := uint32(img.Data[i+2])<<16 | uint32(img.Data[i+1])<<8 | uint32(img.Data[i])
 		if c == colorLogo {
-			logoPixels++
+			n++
 		}
 	}
-	if logoPixels < 100 {
-		t.Fatalf("%d pixels of the logo's color in the middle of an empty frame", logoPixels)
+	return n
+}
+
+func TestLogoOnlyInSingleEmptyFrame(t *testing.T) {
+	wm := newTestManager(t)
+	drainEvents(t, wm)
+	ws := wm.GetActiveWorkspace()
+	if n := logoPixels(t, ws.Root); n < 100 {
+		t.Fatalf("%d pixels of the logo in a workspace that is a single empty frame", n)
+	}
+
+	// split: no logo in either half
+	if err := ws.splitV(); err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, wm)
+	for _, f := range ws.Root.children {
+		if n := logoPixels(t, f); n != 0 {
+			t.Fatalf("%d pixels of the logo in a half of a split workspace", n)
+		}
+	}
+
+	// back to a single frame: the logo again
+	removeActive(t, ws)
+	drainEvents(t, wm)
+	if n := logoPixels(t, ws.Root); n < 100 {
+		t.Fatalf("%d pixels of the logo once back to a single frame", n)
+	}
+
+	// none in the empty scratchpad either
+	s := wm.GetActiveScreen()
+	if err := s.toggleScratchpad(); err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, wm)
+	if n := logoPixels(t, s.scratchpad); n != 0 {
+		t.Fatalf("%d pixels of the logo in the empty scratchpad", n)
 	}
 }

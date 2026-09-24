@@ -11,8 +11,9 @@ import (
 	"github.com/poolpOrg/fion"
 )
 
-// Empty frames show the project's logo, centered: its luminance serves as
-// a mask to draw it in colorLogo over colorEmpty.
+// A workspace that is a single empty frame shows the project's logo,
+// centered: its luminance serves as a mask to draw it in colorLogo over
+// colorEmpty.
 
 // logoMask is how much of each pixel the logo covers, from 0 to 255.
 type logoMask struct {
@@ -172,9 +173,10 @@ func (s *Screen) logoPixmap(w int) (logoImage, bool) {
 	return img, true
 }
 
-// drawLogo draws the logo centered in f when it holds no client.
+// drawLogo draws the logo centered in f when it is the whole of its
+// workspace, not split, and holds no client.
 func (f *Frame) drawLogo() {
-	if !f.leaf || len(f.clients) != 0 {
+	if f.floating() || f != f.workspace.Root || !f.leaf || len(f.clients) != 0 {
 		return
 	}
 	m := loadLogo()
