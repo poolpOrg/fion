@@ -2,6 +2,7 @@ package wm
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -203,23 +204,15 @@ func (ws *Workspace) Destroy() {
 	xproto.DestroyWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
 }
 
+// position returns the numbers, from 1, of the workspace's screen and of the
+// workspace on it, and how many workspaces the screen has.
+func (ws *Workspace) position() (screen, workspace, count int) {
+	screen = slices.Index(ws.Manager.Screens, ws.Screen) + 1
+	workspace = slices.Index(ws.Screen.Workspaces, ws) + 1
+	return screen, workspace, len(ws.Screen.Workspaces)
+}
+
 func (ws *Workspace) updateInfoBar() {
-	var wsOffset int
-	var screenOffset int
-	for offset, currScreen := range ws.Manager.Screens {
-		if ws.Screen == currScreen {
-			screenOffset = offset
-			break
-		}
-	}
-
-	for offset, currWs := range ws.Screen.Workspaces {
-		if currWs == ws {
-			wsOffset = offset
-			break
-		}
-	}
-
 	clock := time.Now().Format(time.RFC1123)
 
 	xproto.PolyFillRectangle(ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC,
@@ -241,7 +234,8 @@ func (ws *Workspace) updateInfoBar() {
 			memPercents.UsedPercent))
 	}
 
-	infotext := fmt.Sprintf("FION | [%02x:%02x/%02x] | ", screenOffset+1, wsOffset+1, len(ws.Screen.Workspaces)-1) + strings.Join(ressources, " | ")
+	screen, workspace, count := ws.position()
+	infotext := fmt.Sprintf("FION | [%02x:%02x/%02x] | ", screen, workspace, count) + strings.Join(ressources, " | ")
 	xproto.ClearArea(ws.Manager.Conn(), false, ws.InfoBarWindow, 0, 0, 0, 0)
 	xproto.ImageText8(ws.Manager.Conn(), byte(len(infotext)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 5, 14, infotext)
 	xproto.ImageText8(ws.Manager.Conn(), byte(len(clock)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, int16(ws.Screen.Geometry().W)-190, 14, clock)

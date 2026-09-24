@@ -339,3 +339,23 @@ func TestTabAt(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspacePosition(t *testing.T) {
+	wm := newTestManager(t)
+	s := wm.GetActiveScreen()
+	first := s.Workspaces[0]
+	if sc, w, n := first.position(); sc != 1 || w != 1 || n != 1 {
+		t.Fatalf("single workspace at %d:%d/%d, want 1:1/1", sc, w, n)
+	}
+
+	second, err := s.newWorkspace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc, w, n := second.position(); sc != 1 || w != 2 || n != 2 {
+		t.Fatalf("second workspace at %d:%d/%d, want 1:2/2", sc, w, n)
+	}
+	if sc, w, n := first.position(); sc != 1 || w != 1 || n != 2 {
+		t.Fatalf("first workspace at %d:%d/%d, want 1:1/2", sc, w, n)
+	}
+}
