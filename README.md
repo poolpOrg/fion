@@ -55,6 +55,7 @@ action key without any modifier.
 | `Super+f` `n` / `p`  | next / previous frame                               |
 | `Super+t` `n` / `p`  | next / previous tab in the active frame             |
 | `Super+space`        | show / hide the scratchpad                          |
+| `Super+Return`       | open the launcher                                   |
 | `Super+F2`           | start an xterm, in the active frame                 |
 | `F2`                 | start an xterm, when the pointer is not over a window |
 | `Super+Escape`       | quit fion                                           |
@@ -62,6 +63,15 @@ action key without any modifier.
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
 to the frame it is dropped on, the scratchpad included, or to another place
 in its own title bar.
+
+The launcher finds, as you type, the commands in `$PATH`, the desktop
+applications and the command lines you ran before, which come first.
+Matching is fuzzy: `ffx` finds `firefox`.  `Up` / `Down` (or `Ctrl+p` /
+`Ctrl+n`) move the selection, `Tab` copies it to the input line to add
+arguments, `Return` runs the selection, or the line as typed when it has
+arguments, through `sh -c`, and `Escape` closes the launcher.  The history
+is kept in `$XDG_STATE_HOME/fion/history`, `~/.local/state/fion/history` by
+default.
 
 Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
 modifier than Super.

@@ -32,6 +32,9 @@ type Manager struct {
 
 	// tab being dragged, nil when none
 	drag *tabDrag
+
+	// created the first time it is opened
+	launcher *launcherUI
 }
 
 func NewManager() (*Manager, error) {
@@ -380,6 +383,10 @@ func (wm *Manager) Run() error {
 func (wm *Manager) handleEvent(e xgb.Event) bool {
 	switch ev := e.(type) {
 	case xproto.ExposeEvent:
+		if wm.launcherOpen() && ev.Window == wm.launcher.window {
+			wm.drawLauncher()
+			break
+		}
 		if wm.drag != nil && ev.Window == wm.drag.window {
 			wm.drawDragWindow()
 			break
@@ -494,6 +501,12 @@ func (wm *Manager) closeActive() error {
 // key that completes it, so that key doesn't go to the client under the
 // pointer either.
 func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
+	// the launcher has the keyboard; what is typed there isn't logged
+	if wm.launcherOpen() {
+		wm.launcherKey(ev)
+		return false
+	}
+
 	km := wm.KeyboardManager
 
 	mods := ev.State &^ (xproto.ModMaskLock | km.Num)
@@ -517,6 +530,12 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	}
 	if mods == km.Mod && sym == XK_Escape {
 		return true
+	}
+	if mods == km.Mod && sym == XK_Return {
+		if err := wm.openLauncher(); err != nil {
+			log.Printf("launcher: %v", err)
+		}
+		return false
 	}
 	if mods == km.Mod && sym == XK_F2 {
 		wm.spawnTerminal()
