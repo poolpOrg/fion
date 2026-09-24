@@ -213,6 +213,14 @@ func (f *Frame) split(geom1, geom2 Geometry) error {
 		child.parent = f1Frame
 	}
 	for _, client := range f.clients {
+		if c, ok := f.workspace.Manager.Clients[client]; ok {
+			c.frame = f1Frame
+			// reparenting a mapped window unmaps it first
+			attr, err := xproto.GetWindowAttributes(f.Conn(), client).Reply()
+			if err == nil && attr.MapState != xproto.MapStateUnmapped {
+				c.ignoreUnmap++
+			}
+		}
 		f1Frame.clients = append(f1Frame.clients, client)
 		xproto.ReparentWindow(f.Conn(), client, f1Frame.window, 0, 20)
 		mask := uint16(xproto.ConfigWindowX |
@@ -386,6 +394,9 @@ func (f *Frame) RemoveClient(client xproto.Window) {
 	}
 
 	f.clients = append(f.clients[:idx], f.clients[idx+1:]...)
+	if idx < f.activeClient {
+		f.activeClient--
+	}
 	if f.activeClient >= len(f.clients) {
 		f.activeClient = len(f.clients) - 1
 	}

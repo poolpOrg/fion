@@ -25,7 +25,7 @@ type Manager struct {
 	NumLock uint16
 
 	// Clients by window id
-	Clients map[xproto.Window]struct{}
+	Clients map[xproto.Window]*Client
 	Frames  map[xproto.Window]*Frame
 
 	// pending key prefix (M_Workspace, M_Frame), 0 when none
@@ -50,7 +50,7 @@ func NewManager() (*Manager, error) {
 
 		//Atoms:   getAtoms(conn),
 		Frames:  make(map[xproto.Window]*Frame),
-		Clients: make(map[xproto.Window]struct{}),
+		Clients: make(map[xproto.Window]*Client),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
 
@@ -101,6 +101,9 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 	}
 	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
 
+	// Once reparented the client is no longer a child of the root, so the
+	// root's SubstructureNotify stops reporting on it: watch it directly.
+	xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwEventMask, []uint32{xproto.EventMaskStructureNotify})
 	xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.Conn(), xproto.SetModeInsert, win)
 	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, 20)
@@ -117,22 +120,65 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 
 	xproto.MapWindow(wm.Conn(), win)
 
-	wm.Clients[win] = struct{}{}
-
-	activeWorkspace.GetActiveFrame().AddTab(win)
+	frame := activeWorkspace.GetActiveFrame()
+	wm.Clients[win] = &Client{frame: frame}
+	frame.AddTab(win)
+	log.Printf("managing 0x%x", win)
 
 	// Attach to active Leaf as a new tab
 	//wm.updateClientList()
 	// wm.layoutWorkspace(ws)
 }
 
+// forgetClient drops a client from fion's bookkeeping without touching the
+// window itself, and returns what was known about it.
+func (wm *Manager) forgetClient(win xproto.Window) *Client {
+	c, ok := wm.Clients[win]
+	if !ok {
+		return nil
+	}
+	delete(wm.Clients, win)
+	c.frame.RemoveClient(win)
+	c.frame.updateTitleBar()
+	return c
+}
+
+// unmanageWindow destroys a client window at the user's request.
 func (wm *Manager) unmanageWindow(win xproto.Window) {
-	if _, ok := wm.Clients[win]; !ok {
+	if wm.forgetClient(win) == nil {
 		return
 	}
-	xproto.UnmapWindow(wm.Conn(), win)
 	xproto.DestroyWindow(wm.Conn(), win)
-	delete(wm.Clients, win)
+}
+
+func (wm *Manager) handleDestroyNotify(ev xproto.DestroyNotifyEvent) {
+	if wm.forgetClient(ev.Window) != nil {
+		log.Printf("0x%x destroyed", ev.Window)
+	}
+}
+
+func (wm *Manager) handleUnmapNotify(ev xproto.UnmapNotifyEvent) {
+	c, ok := wm.Clients[ev.Window]
+	if !ok {
+		return
+	}
+	if c.ignoreUnmap > 0 {
+		c.ignoreUnmap--
+		return
+	}
+
+	// The client withdrew its window. Hand it back to the root so that a
+	// later MapRequest manages it afresh.
+	wm.forgetClient(ev.Window)
+	log.Printf("0x%x withdrawn", ev.Window)
+
+	// A client that exits unmaps its window just before destroying it, so
+	// the window is often gone already: check these requests and drop the
+	// errors rather than have them reported as X errors by the event loop.
+	root := c.frame.workspace.Screen.Info().Root
+	_ = xproto.ChangeWindowAttributesChecked(wm.Conn(), ev.Window, xproto.CwEventMask, []uint32{xproto.EventMaskNoEvent}).Check()
+	_ = xproto.ReparentWindowChecked(wm.Conn(), ev.Window, root, 0, 0).Check()
+	_ = xproto.ChangeSaveSetChecked(wm.Conn(), xproto.SetModeDelete, ev.Window).Check()
 }
 
 //func (wm *WM) updateClientList() {
@@ -309,9 +355,9 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case xproto.ConfigureRequestEvent:
 		//wm.handleConfigure(ev)
 	case xproto.DestroyNotifyEvent:
-		//wm.unmanageWindow(ev.Window)
+		wm.handleDestroyNotify(ev)
 	case xproto.UnmapNotifyEvent:
-		//wm.unmanageWindow(ev.Window)
+		wm.handleUnmapNotify(ev)
 	case xproto.KeyPressEvent:
 		return wm.handleKeyPress(ev)
 	case xproto.ButtonPressEvent:
@@ -409,7 +455,6 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 			frame := wm.GetActiveFrame()
 			client := wm.GetActiveClient()
 			if client != 0 {
-				frame.RemoveClient(client)
 				wm.unmanageWindow(client)
 			} else if frame.GetParent() != nil {
 				parent := frame.GetParent()
