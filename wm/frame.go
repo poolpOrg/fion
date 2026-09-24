@@ -2,7 +2,6 @@ package wm
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -89,7 +88,16 @@ func (f *Frame) firstLeaf() *Frame {
 }
 
 func (f *Frame) Conn() *xgb.Conn {
-	return f.workspace.Manager.Conn()
+	return f.wm().Conn()
+}
+
+func (f *Frame) wm() *Manager {
+	return f.workspace.Manager
+}
+
+// isActive reports whether f is the frame the bindings act on.
+func (f *Frame) isActive() bool {
+	return f.workspace.ActiveFrame == f
 }
 
 func (f *Frame) GetWindow() xproto.Window {
@@ -143,6 +151,7 @@ func (f *Frame) setuptitleBar() error {
 	// the GC keeps the font alive, the id is no longer needed
 	xproto.CloseFont(f.Conn(), fid)
 	f.barGC = gc
+	f.wm().Frames[f.titleBar] = f
 
 	f.updateTitleBar()
 	xproto.MapWindow(f.Conn(), f.titleBar)
@@ -171,6 +180,7 @@ func (f *Frame) Unmap() {
 func (f *Frame) Destroy() {
 	walk(f, func(n *Frame) {
 		xproto.FreeGC(n.Conn(), n.barGC)
+		delete(n.wm().Frames, n.titleBar)
 	})
 	xproto.DestroyWindow(f.Conn(), f.window)
 }
@@ -237,11 +247,10 @@ func (f *Frame) split(vertical bool) error {
 	}
 
 	for _, client := range f.clients {
-		if c, ok := f.workspace.Manager.Clients[client]; ok {
+		if c, ok := f.wm().Clients[client]; ok {
 			c.frame = f1
 			// reparenting a mapped window unmaps it first
-			attr, err := xproto.GetWindowAttributes(f.Conn(), client).Reply()
-			if err == nil && attr.MapState != xproto.MapStateUnmapped {
+			if c.mapped {
 				c.ignoreUnmap++
 			}
 		}
@@ -269,31 +278,88 @@ func (f *Frame) splitV() error {
 	return f.split(true)
 }
 
+// AddTab adds a client to the leaf f as its active tab.
 func (f *Frame) AddTab(win xproto.Window) {
 	f.clients = append(f.clients, win)
-	f.activeClient = len(f.clients) - 1
-	f.updateTitleBar()
+	f.selectClient(len(f.clients) - 1)
+}
+
+// tab bar colors
+const (
+	tabActiveColor   = 0x335599 // active tab of the active frame
+	tabSelectedColor = 0x555555 // active tab of another frame
+	tabColor         = 0x222222
+	tabTextColor     = 0xffffff
+	tabEmptyColor    = 0x888888
+
+	// width of a character in the "fixed" core font
+	fixedCharWidth = 6
+)
+
+// tabWidth is the width of each tab in the title bar.
+func (f *Frame) tabWidth() int {
+	if len(f.clients) == 0 {
+		return 0
+	}
+	return (int(f.g.W) - 4) / len(f.clients)
+}
+
+// tabAt returns the index of the tab at x in the title bar, or -1.
+func (f *Frame) tabAt(x int16) int {
+	w := f.tabWidth()
+	if w == 0 || x < 0 {
+		return -1
+	}
+	i := int(x) / w
+	if i >= len(f.clients) {
+		return -1
+	}
+	return i
 }
 
 func (f *Frame) updateTitleBar() {
-	names := []string{}
-	for _, window := range f.clients {
-		names = append(names, getWindowName(f.Conn(), window))
+	conn, bar := f.Conn(), xproto.Drawable(f.titleBar)
+	xproto.ClearArea(conn, false, f.titleBar, 0, 0, 0, 0)
+
+	text := func(x int16, s string, fg, bg uint32) {
+		if len(s) > 255 {
+			s = s[:255]
+		}
+		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground|xproto.GcBackground, []uint32{fg, bg})
+		xproto.ImageText8(conn, byte(len(s)), bar, f.barGC, x, 14, s)
 	}
 
-	title := fmt.Sprintf(" [%d/%d] %s ", f.activeClient+1, len(f.clients), strings.Join(names, " | "))
 	if len(f.clients) == 0 {
-		title = " [0/0] empty"
+		text(4, "empty", tabEmptyColor, f.workspace.Screen.Info().BlackPixel)
 	}
-	xproto.ClearArea(f.Conn(), false, f.titleBar, 0, 0, 0, 0)
-	xproto.ImageText8(f.Conn(), byte(len(title)), xproto.Drawable(f.titleBar), f.barGC, 0, 14, title)
 
-	if f.workspace.ActiveFrame == f {
-		xproto.ChangeWindowAttributes(f.Conn(), f.titleBar, xproto.CwBorderPixel, []uint32{0x335599})
+	w := f.tabWidth()
+	for i, client := range f.clients {
+		bg := uint32(tabColor)
+		if i == f.activeClient {
+			bg = tabSelectedColor
+			if f.isActive() {
+				bg = tabActiveColor
+			}
+		}
+		x := int16(i * w)
+		// a 1px gap between tabs
+		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground, []uint32{bg})
+		xproto.PolyFillRectangle(conn, bar, f.barGC,
+			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(w-1, 1)), Height: 20}})
+
+		title := getWindowName(conn, client)
+		if n := (w - 8) / fixedCharWidth; len(title) > n {
+			title = title[:max(n, 0)]
+		}
+		text(x+4, title, tabTextColor, bg)
+	}
+
+	if f.isActive() {
+		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{tabActiveColor})
 	} else {
-		xproto.ChangeWindowAttributes(f.Conn(), f.titleBar, xproto.CwBorderPixel, []uint32{f.workspace.Color})
+		xproto.ChangeWindowAttributes(conn, f.titleBar, xproto.CwBorderPixel, []uint32{f.workspace.Color})
 	}
-
 }
 
 func walk(n *Frame, f func(*Frame)) {
@@ -307,21 +373,46 @@ func walk(n *Frame, f func(*Frame)) {
 }
 
 func (f *Frame) cycleClientLeft() {
-	if len(f.clients) <= 1 {
-		return
+	if len(f.clients) > 1 {
+		f.selectClient((f.activeClient + len(f.clients) - 1) % len(f.clients))
 	}
-	xproto.UnmapWindow(f.Conn(), f.clients[f.activeClient])
-	f.activeClient = (f.activeClient + len(f.clients) - 1) % len(f.clients)
-	xproto.MapWindow(f.Conn(), f.clients[f.activeClient])
 }
 
 func (f *Frame) cycleClientRight() {
-	if len(f.clients) <= 1 {
+	if len(f.clients) > 1 {
+		f.selectClient((f.activeClient + 1) % len(f.clients))
+	}
+}
+
+// selectClient makes the i-th tab the active one.
+func (f *Frame) selectClient(i int) {
+	if i < 0 || i >= len(f.clients) {
 		return
 	}
-	xproto.UnmapWindow(f.Conn(), f.clients[f.activeClient])
-	f.activeClient = (f.activeClient + 1) % len(f.clients)
-	xproto.MapWindow(f.Conn(), f.clients[f.activeClient])
+	f.activeClient = i
+	f.showActiveClient()
+	f.updateTitleBar()
+}
+
+// showActiveClient maps the active tab and unmaps the others.
+func (f *Frame) showActiveClient() {
+	// map before unmapping, so that the frame doesn't flash empty
+	if active := f.GetActiveClient(); active != 0 {
+		if c, ok := f.wm().Clients[active]; ok && !c.mapped {
+			xproto.MapWindow(f.Conn(), active)
+			c.mapped = true
+		}
+	}
+	for i, client := range f.clients {
+		if i == f.activeClient {
+			continue
+		}
+		if c, ok := f.wm().Clients[client]; ok && c.mapped {
+			c.ignoreUnmap++
+			xproto.UnmapWindow(f.Conn(), client)
+			c.mapped = false
+		}
+	}
 }
 
 func (f *Frame) GetActiveClient() xproto.Window {

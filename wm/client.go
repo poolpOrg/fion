@@ -9,4 +9,8 @@ type Client struct {
 	// mapped window into another frame, that must not be taken for the
 	// client withdrawing.
 	ignoreUnmap int
+
+	// whether fion last mapped or unmapped the window: only the active tab
+	// of a frame is mapped
+	mapped bool
 }

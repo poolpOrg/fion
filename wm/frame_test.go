@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
 )
 
@@ -27,6 +28,31 @@ func newTestManager(t *testing.T) *Manager {
 	}
 	t.Cleanup(wm.Close)
 	return wm
+}
+
+// newTestClient creates a top-level window and has fion manage it, as a
+// MapRequest would. The window belongs to its own connection, like a real
+// client's: X refuses a client's own windows in its save-set.
+func newTestClient(t *testing.T, wm *Manager) xproto.Window {
+	t.Helper()
+	conn, err := xgb.NewConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(conn.Close)
+
+	scr := wm.GetActiveWorkspace().Screen.Info()
+	win, err := xproto.NewWindowId(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = xproto.CreateWindowChecked(conn, scr.RootDepth, win, scr.Root, 0, 0, 100, 100, 0,
+		xproto.WindowClassInputOutput, scr.RootVisual, 0, nil).Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wm.manageWindow(win)
+	return win
 }
 
 // checkTree verifies the frame tree's invariants and that the X window
@@ -153,14 +179,8 @@ func TestSplitKeepsClients(t *testing.T) {
 	wm := newTestManager(t)
 	ws := wm.GetActiveWorkspace()
 
-	scr := ws.Screen.Info()
-	win, err := xproto.NewWindowId(wm.Conn())
-	if err != nil {
-		t.Fatal(err)
-	}
-	xproto.CreateWindow(wm.Conn(), scr.RootDepth, win, scr.Root, 0, 0, 100, 100, 0,
-		xproto.WindowClassInputOutput, scr.RootVisual, 0, nil)
-	wm.manageWindow(win)
+	win := newTestClient(t, wm)
+	drainEvents(t, wm)
 
 	frame := ws.ActiveFrame
 	if err := ws.splitV(); err != nil {
@@ -191,4 +211,131 @@ func TestSplitKeepsClients(t *testing.T) {
 		t.Fatalf("removed a frame holding a client")
 	}
 	checkTree(t, ws)
+}
+
+// destroyTestClient destroys a window made by newTestClient, from another
+// connection as a client exiting would.
+func destroyTestClient(t *testing.T, win xproto.Window) {
+	t.Helper()
+	conn, err := xgb.NewConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := xproto.DestroyWindowChecked(conn, win).Check(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// drainEvents feeds the events the server has queued so far to fion.
+func drainEvents(t *testing.T, wm *Manager) {
+	t.Helper()
+	// a round trip, so that the events caused by earlier requests are in
+	if _, err := xproto.GetInputFocus(wm.Conn()).Reply(); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		ev, err := wm.Conn().PollForEvent()
+		if ev == nil && err == nil {
+			return
+		}
+		if err != nil {
+			t.Fatalf("X error: %v", err)
+		}
+		wm.handleEvent(ev)
+	}
+}
+
+// checkTabs verifies that exactly the active tab of f is mapped.
+func checkTabs(t *testing.T, f *Frame) {
+	t.Helper()
+	for i, win := range f.clients {
+		attr, err := xproto.GetWindowAttributes(f.Conn(), win).Reply()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mapped := attr.MapState != xproto.MapStateUnmapped
+		if want := i == f.activeClient; mapped != want {
+			t.Fatalf("tab %d (0x%x) mapped=%v, want %v (active tab %d)", i, win, mapped, want, f.activeClient)
+		}
+	}
+}
+
+func TestTabs(t *testing.T) {
+	wm := newTestManager(t)
+	f := wm.GetActiveFrame()
+
+	var wins []xproto.Window
+	for range 3 {
+		wins = append(wins, newTestClient(t, wm))
+	}
+	drainEvents(t, wm)
+	if len(f.clients) != 3 || f.activeClient != 2 {
+		t.Fatalf("frame has %d tabs, active %d; want 3, active 2", len(f.clients), f.activeClient)
+	}
+	checkTabs(t, f)
+
+	f.cycleClientRight()
+	drainEvents(t, wm)
+	if f.activeClient != 0 {
+		t.Fatalf("active tab %d after cycling right from the last, want 0", f.activeClient)
+	}
+	checkTabs(t, f)
+
+	f.cycleClientLeft()
+	f.cycleClientLeft()
+	drainEvents(t, wm)
+	if f.activeClient != 1 {
+		t.Fatalf("active tab %d after cycling left twice from 0, want 1", f.activeClient)
+	}
+	checkTabs(t, f)
+
+	// hiding tabs must not be taken for the clients withdrawing
+	if len(wm.Clients) != 3 {
+		t.Fatalf("%d clients managed, want 3", len(wm.Clients))
+	}
+
+	// clicking the last tab selects it
+	w := f.tabWidth()
+	wm.clickTitleBar(f, int16(2*w+w/2))
+	drainEvents(t, wm)
+	if f.activeClient != 2 {
+		t.Fatalf("active tab %d after clicking the third, want 2", f.activeClient)
+	}
+	checkTabs(t, f)
+
+	// the active tab going away shows another one
+	destroyTestClient(t, wins[2])
+	drainEvents(t, wm)
+	if len(f.clients) != 2 || f.GetActiveClient() == 0 {
+		t.Fatalf("frame has %d tabs and active 0x%x after destroying the active one", len(f.clients), f.GetActiveClient())
+	}
+	checkTabs(t, f)
+
+	// hidden tabs move along on a split, still hidden
+	if err := wm.GetActiveWorkspace().splitH(); err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, wm)
+	checkTabs(t, wm.GetActiveWorkspace().Root.children[0])
+	if len(wm.Clients) != 2 {
+		t.Fatalf("%d clients managed after the split, want 2", len(wm.Clients))
+	}
+}
+
+func TestTabAt(t *testing.T) {
+	wm := newTestManager(t)
+	f := wm.GetActiveFrame()
+	if f.tabAt(10) != -1 {
+		t.Fatalf("tab found in an empty frame")
+	}
+	for range 4 {
+		newTestClient(t, wm)
+	}
+	w := f.tabWidth()
+	for x, want := range map[int16]int{0: 0, int16(w - 1): 0, int16(w): 1, int16(4*w - 1): 3, int16(4 * w): -1, -1: -1} {
+		if got := f.tabAt(x); got != want {
+			t.Errorf("tabAt(%d) = %d, want %d (tab width %d)", x, got, want, w)
+		}
+	}
 }

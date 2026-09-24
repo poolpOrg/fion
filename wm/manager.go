@@ -28,7 +28,7 @@ type Manager struct {
 	Clients map[xproto.Window]*Client
 	Frames  map[xproto.Window]*Frame
 
-	// pending key prefix (M_Workspace, M_Frame), 0 when none
+	// pending key prefix (M_Workspace, M_Frame, M_Client), 0 when none
 	mode int
 }
 
@@ -92,8 +92,8 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 	// Make a tab for client
 	bw := uint32(1)
 
-	activeWorkspace := wm.GetActiveWorkspace()
-	parentId := activeWorkspace.GetActiveFrame().GetWindow()
+	frame := wm.GetActiveFrame()
+	parentId := frame.GetWindow()
 
 	geom, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(parentId)).Reply()
 	if err != nil {
@@ -102,8 +102,10 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
 
 	// Once reparented the client is no longer a child of the root, so the
-	// root's SubstructureNotify stops reporting on it: watch it directly.
-	xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwEventMask, []uint32{xproto.EventMaskStructureNotify})
+	// root's SubstructureNotify stops reporting on it: watch it directly,
+	// along with its properties for the tab title.
+	xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwEventMask,
+		[]uint32{xproto.EventMaskStructureNotify | xproto.EventMaskPropertyChange})
 	xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.Conn(), xproto.SetModeInsert, win)
 	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, 20)
@@ -118,9 +120,7 @@ func (wm *Manager) manageWindow(win xproto.Window) {
 	//xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})
 	//xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{1})
 
-	xproto.MapWindow(wm.Conn(), win)
-
-	frame := activeWorkspace.GetActiveFrame()
+	// mapped by the frame, as its new active tab
 	wm.Clients[win] = &Client{frame: frame}
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
@@ -139,6 +139,7 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	}
 	delete(wm.Clients, win)
 	c.frame.RemoveClient(win)
+	c.frame.showActiveClient()
 	c.frame.updateTitleBar()
 	return c
 }
@@ -243,6 +244,7 @@ func (wm *Manager) GetActiveClient() xproto.Window {
 const (
 	M_Workspace = 1
 	M_Frame     = 2
+	M_Client    = 3 // tabs of the active frame
 )
 
 // xEvent is what the X connection hands us: an event or an error, never both.
@@ -361,7 +363,16 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		if ev.Request != xproto.MappingPointer {
 			wm.KeyboardManager.MappingChanged()
 		}
+	case xproto.PropertyNotifyEvent:
+		if ev.Atom == xproto.AtomWmName {
+			if c, ok := wm.Clients[ev.Window]; ok {
+				c.frame.updateTitleBar()
+			}
+		}
 	case xproto.ButtonPressEvent:
+		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
+			wm.clickTitleBar(f, ev.EventX)
+		}
 		/*z
 		// Focus on click; Alt+Left move, Alt+Right resize on frame
 		if leaf := wm.Frames[ev.Event]; leaf != nil {
@@ -397,7 +408,16 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	return false
 }
 
-// handleKeyPress implements the prefix bindings (Mod+w, Mod+f) and
+// clickTitleBar makes f the active frame and selects the tab at x.
+func (wm *Manager) clickTitleBar(f *Frame, x int16) {
+	f.workspace.ActiveFrame = f
+	if i := f.tabAt(x); i >= 0 {
+		f.selectClient(i)
+	}
+	f.workspace.updateTitleBars()
+}
+
+// handleKeyPress implements the prefix bindings (Mod+w, Mod+f, Mod+k) and
 // reports whether the user asked to quit.
 //
 // The prefixes and Mod+Escape are grabbed on the root, so they reach fion
@@ -412,11 +432,14 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 
 	log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
 
-	if mods == km.Mod && (sym == XK_w || sym == XK_f) {
-		if sym == XK_w {
+	if mods == km.Mod && (sym == XK_w || sym == XK_f || sym == XK_k) {
+		switch sym {
+		case XK_w:
 			wm.mode = M_Workspace
-		} else {
+		case XK_f:
 			wm.mode = M_Frame
+		case XK_k:
+			wm.mode = M_Client
 		}
 		if err := km.GrabKeyboard(ev.Root); err != nil {
 			log.Printf("grab keyboard: %v", err)
@@ -524,6 +547,15 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 					ws.updateTitleBars()
 				}
 			}
+		}
+	}
+
+	if mode == M_Client {
+		switch sym {
+		case XK_n:
+			wm.GetActiveFrame().cycleClientRight()
+		case XK_p:
+			wm.GetActiveFrame().cycleClientLeft()
 		}
 	}
 
