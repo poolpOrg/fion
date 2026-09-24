@@ -179,7 +179,12 @@ func (wm *Manager) launcherKey(ev xproto.KeyPressEvent) {
 		line := l.line()
 		wm.closeLauncher()
 		if line != "" {
-			wm.spawn("/bin/sh", "-c", line)
+			if l.needsTerminal(line, launcherOpensWindows) {
+				args := inTerminal(line)
+				wm.spawn(args[0], args[1:]...)
+			} else {
+				wm.spawn("/bin/sh", "-c", line)
+			}
 			if err := appendHistory(historyPath(), line); err != nil {
 				log.Printf("launcher history: %v", err)
 			}

@@ -72,7 +72,10 @@ applications and the command lines you ran before, which come first.
 Matching is fuzzy: `ffx` finds `firefox`.  `Up` / `Down` (or `Ctrl+p` /
 `Ctrl+n`) move the selection, `Tab` copies it to the input line to add
 arguments, `Return` runs the selection, or the line as typed when it has
-arguments, through `sh -c`, and `Escape` closes the launcher.  The history
+arguments, through `sh -c`, and `Escape` closes the launcher.  Programs
+that don't open windows, such as `ls` or `btop`, run in an xterm that stays
+open once they exit, until `Return`: fion tells them from the libraries
+they are linked to, and desktop applications from their entries.  The history
 is kept in `$XDG_STATE_HOME/fion/history`, `~/.local/state/fion/history` by
 default.
 

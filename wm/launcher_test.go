@@ -242,6 +242,9 @@ func TestLauncherRun(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", state)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_DIRS", t.TempDir())
+	// run it directly, not in a terminal
+	launcherOpensWindows = func(string) bool { return true }
+	t.Cleanup(func() { launcherOpensWindows = opensWindows })
 
 	wm := newTestManager(t)
 	conn, err := xgb.NewConn()
