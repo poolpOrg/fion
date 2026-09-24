@@ -94,6 +94,7 @@ type KeyboardManager struct {
 	wm      *Manager
 	Mod     uint16 // modifier for the bindings, Super by default
 	ModName string
+	modSet  bool   // Mod comes from FION_MODIFIER rather than detection
 	Num     uint16 // NumLock mask
 	Mode    uint16 // Mode_switch (AltGr) mask
 }
@@ -119,7 +120,7 @@ func NewKeyboardManager(wm *Manager) *KeyboardManager {
 	// a host that keeps Super to itself (or, like XQuartz, has none).
 	if name := os.Getenv("FION_MODIFIER"); name != "" {
 		if mask, ok := modifierMasks[strings.ToLower(name)]; ok {
-			k.Mod, k.ModName = mask, name
+			k.Mod, k.ModName, k.modSet = mask, name, true
 		} else {
 			log.Printf("FION_MODIFIER: unknown modifier %q, using Super", name)
 		}
@@ -129,6 +130,66 @@ func NewKeyboardManager(wm *Manager) *KeyboardManager {
 
 func (k *KeyboardManager) Conn() *xgb.Conn {
 	return k.wm.xConn
+}
+
+// grabbed on every root, whatever the window under the pointer: the
+// prefixes and quit, all with Mod
+var boundKeys = []xproto.Keysym{XK_w, XK_f, XK_Escape}
+
+// GrabBindings (re)establishes the passive grabs for the bindings on every
+// root. Grabs are held on keycodes, so they must be redone when the keyboard
+// mapping changes.
+func (k *KeyboardManager) GrabBindings() {
+	for _, scr := range k.wm.Screens {
+		root := scr.Info().Root
+		xproto.UngrabKey(k.Conn(), xproto.GrabAny, root, xproto.ModMaskAny)
+		for _, sym := range boundKeys {
+			if err := k.GrabSym(root, sym, k.Mod); err != nil {
+				log.Printf("grab %s+0x%x: %v", k.ModName, uint32(sym), err)
+			}
+		}
+	}
+}
+
+// MappingChanged refreshes what depends on the keyboard mapping.
+func (k *KeyboardManager) MappingChanged() {
+	if !k.modSet {
+		k.Mod = k.detectSuperMask()
+	}
+	k.Num, k.Mode = k.detectModifierMasks()
+	k.GrabBindings()
+}
+
+// GrabKeyboard takes the whole keyboard, so that the key completing a prefix
+// comes to fion rather than to the client under the pointer.
+func (k *KeyboardManager) GrabKeyboard(root xproto.Window) error {
+	r, err := xproto.GrabKeyboard(k.Conn(), false, root, xproto.TimeCurrentTime,
+		xproto.GrabModeAsync, xproto.GrabModeAsync).Reply()
+	if err != nil {
+		return err
+	}
+	if r.Status != xproto.GrabStatusSuccess {
+		return fmt.Errorf("status %d", r.Status)
+	}
+	return nil
+}
+
+func (k *KeyboardManager) UngrabKeyboard() {
+	xproto.UngrabKeyboard(k.Conn(), xproto.TimeCurrentTime)
+}
+
+// isModifierKey reports whether sym is a modifier key (Shift, Control,
+// Alt, Super, ...) rather than a key that completes a binding.
+func isModifierKey(sym xproto.Keysym) bool {
+	switch {
+	case sym >= 0xFFE1 && sym <= 0xFFEE: // Shift_L .. Hyper_R
+		return true
+	case sym == 0xFF7E, sym == 0xFF7F: // Mode_switch, Num_Lock
+		return true
+	case sym >= 0xFE01 && sym <= 0xFE13: // ISO_Lock .. ISO_Level5_Lock
+		return true
+	}
+	return false
 }
 
 /* ---------------- core: portable grabs ---------------- */

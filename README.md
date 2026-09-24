@@ -74,8 +74,8 @@ by `FION_TEST_DISPLAY`; they are skipped otherwise:
 
 known limitations
 --
-- keys are not grabbed: bindings only reach fion when the pointer is over a
-  title bar, the bar or an empty frame, not over a client
+- `F2` is not grabbed, so that applications keep it: it only starts an
+  xterm when the pointer is not over a client
 - input focus is not managed, it follows the pointer
 - all the tabs of a frame are shown on top of each other, there is no way
   to switch between them yet

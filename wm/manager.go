@@ -287,10 +287,7 @@ func (wm *Manager) spawn(name string, args ...string) {
 // goroutine, so the workspace and frame trees need no locking.
 func (wm *Manager) Run() error {
 
-	base := wm.KeyboardManager.Mod
-	for _, scr := range wm.Screens {
-		_ = wm.KeyboardManager.GrabNamed(scr.Info().Root, "F9", base)
-	}
+	wm.KeyboardManager.GrabBindings()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -360,6 +357,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		wm.handleUnmapNotify(ev)
 	case xproto.KeyPressEvent:
 		return wm.handleKeyPress(ev)
+	case xproto.MappingNotifyEvent:
+		if ev.Request != xproto.MappingPointer {
+			wm.KeyboardManager.MappingChanged()
+		}
 	case xproto.ButtonPressEvent:
 		/*z
 		// Focus on click; Alt+Left move, Alt+Right resize on frame
@@ -396,8 +397,13 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	return false
 }
 
-// handleKeyPress implements the prefix bindings (Super+w, Super+f) and
+// handleKeyPress implements the prefix bindings (Mod+w, Mod+f) and
 // reports whether the user asked to quit.
+//
+// The prefixes and Mod+Escape are grabbed on the root, so they reach fion
+// wherever the pointer is. A prefix then grabs the whole keyboard until the
+// key that completes it, so that key doesn't go to the client under the
+// pointer either.
 func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	km := wm.KeyboardManager
 
@@ -406,20 +412,32 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 
 	log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
 
-	if mods == km.Mod && sym == XK_w {
-		wm.mode = M_Workspace
-		return false
-	}
-	if mods == km.Mod && sym == XK_f {
-		wm.mode = M_Frame
+	if mods == km.Mod && (sym == XK_w || sym == XK_f) {
+		if sym == XK_w {
+			wm.mode = M_Workspace
+		} else {
+			wm.mode = M_Frame
+		}
+		if err := km.GrabKeyboard(ev.Root); err != nil {
+			log.Printf("grab keyboard: %v", err)
+		}
 		return false
 	}
 	if mods == km.Mod && sym == XK_Escape {
 		return true
 	}
 
+	// pressing Shift or releasing Mod and pressing it again doesn't
+	// complete a prefix
+	if wm.mode != 0 && isModifierKey(sym) {
+		return false
+	}
+
 	mode := wm.mode
 	wm.mode = 0
+	if mode != 0 {
+		km.UngrabKeyboard()
+	}
 	if mods != 0 {
 		mode = 0
 	}
