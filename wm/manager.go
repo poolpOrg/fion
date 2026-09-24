@@ -303,6 +303,8 @@ func (wm *Manager) Run() error {
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+	keymap := time.NewTicker(250 * time.Millisecond)
+	defer keymap.Stop()
 
 	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
 
@@ -318,6 +320,11 @@ func (wm *Manager) Run() error {
 					ws.updateInfoBar()
 				}
 				s.updateTitleBars()
+			}
+
+		case <-keymap.C:
+			if wm.KeyboardManager.CheckMapping() {
+				log.Printf("keyboard mapping changed, bindings grabbed again")
 			}
 
 		case ev, ok := <-events:

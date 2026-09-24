@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/jezek/xgb"
@@ -97,6 +98,11 @@ type KeyboardManager struct {
 	modSet  bool   // Mod comes from FION_MODIFIER rather than detection
 	Num     uint16 // NumLock mask
 	Mode    uint16 // Mode_switch (AltGr) mask
+
+	// the mappings the grabs were made for, to notice changes that come
+	// without a MappingNotify
+	keysyms []xproto.Keysym
+	modmap  []xproto.Keycode
 }
 
 // modifiers FION_MODIFIER may name
@@ -125,7 +131,40 @@ func NewKeyboardManager(wm *Manager) *KeyboardManager {
 			log.Printf("FION_MODIFIER: unknown modifier %q, using Super", name)
 		}
 	}
+	k.keysyms, k.modmap = k.mappings()
 	return k
+}
+
+// mappings fetches the keyboard and modifier mappings.
+func (k *KeyboardManager) mappings() ([]xproto.Keysym, []xproto.Keycode) {
+	setup := xproto.Setup(k.Conn())
+	var keysyms []xproto.Keysym
+	if r, err := xproto.GetKeyboardMapping(k.Conn(), setup.MinKeycode,
+		byte(setup.MaxKeycode-setup.MinKeycode+1)).Reply(); err == nil {
+		keysyms = r.Keysyms
+	}
+	var modmap []xproto.Keycode
+	if r, err := xproto.GetModifierMapping(k.Conn()).Reply(); err == nil {
+		modmap = r.Keycodes
+	}
+	return keysyms, modmap
+}
+
+// CheckMapping redoes the grabs if the keyboard mapping changed without a
+// MappingNotify, and reports whether it did. XKB doesn't send one when the
+// core keyboard switches to a device with another keymap: Xephyr does so
+// between the host's keyboard and XTEST, and so do setups with several
+// keyboards. The grabs, made on keycodes, would then miss the bindings.
+func (k *KeyboardManager) CheckMapping() bool {
+	keysyms, modmap := k.mappings()
+	if keysyms == nil || modmap == nil {
+		return false
+	}
+	if slices.Equal(keysyms, k.keysyms) && slices.Equal(modmap, k.modmap) {
+		return false
+	}
+	k.MappingChanged()
+	return true
 }
 
 func (k *KeyboardManager) Conn() *xgb.Conn {
@@ -157,6 +196,7 @@ func (k *KeyboardManager) MappingChanged() {
 		k.Mod = k.detectSuperMask()
 	}
 	k.Num, k.Mode = k.detectModifierMasks()
+	k.keysyms, k.modmap = k.mappings()
 	k.GrabBindings()
 }
 
