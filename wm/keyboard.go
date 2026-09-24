@@ -230,7 +230,7 @@ func (k *KeyboardManager) levelsFor(sym xproto.Keysym) (needShift, needMode bool
 /* --------------- modifier detection (strict minimum) --------------- */
 
 func (k *KeyboardManager) detectSuperMask() uint16 {
-	const XK_Super_L, XK_Super_R = 0xFFE3, 0xFFE4
+	const XK_Super_L, XK_Super_R = 0xFFEB, 0xFFEC
 	mm, err := xproto.GetModifierMapping(k.Conn()).Reply()
 	if err != nil || mm == nil {
 		return xproto.ModMask4
