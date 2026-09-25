@@ -17,10 +17,10 @@ type cheatSheet struct {
 }
 
 // cheatSheetLines lists the bindings, and what the mouse does.
-func cheatSheetLines(mod string) []string {
+func cheatSheetLines(mod, ctrl string) []string {
 	rows := [][2]string{}
 	for _, b := range bindings {
-		rows = append(rows, [2]string{b.keys(mod), b.desc})
+		rows = append(rows, [2]string{b.keys(mod, ctrl), b.desc})
 	}
 	rows = append(rows,
 		[2]string{mod + "+?", "this cheat sheet"},
@@ -74,7 +74,8 @@ func (wm *Manager) showCheatSheet() error {
 	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
 		return err
 	}
-	c.lines = cheatSheetLines(wm.KeyboardManager.ModName)
+	_, ctrl := wm.KeyboardManager.CtrlMask()
+	c.lines = cheatSheetLines(wm.KeyboardManager.ModName, ctrl)
 	c.shown = true
 
 	cols := 0

@@ -779,10 +779,14 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		}
 		return false
 	}
-	if mods&^xproto.ModMaskShift != km.Mod {
+	base, ctrl := mods&^xproto.ModMaskShift, false
+	if cm, _ := km.CtrlMask(); base == km.Mod|cm {
+		base, ctrl = km.Mod, true
+	}
+	if base != km.Mod {
 		return false
 	}
-	return wm.handleBinding(sym, mods&xproto.ModMaskShift != 0)
+	return wm.handleBinding(sym, mods&xproto.ModMaskShift != 0, ctrl)
 }
 
 type Geometry struct {

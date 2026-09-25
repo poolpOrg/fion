@@ -185,10 +185,14 @@ func (k *KeyboardManager) GrabBindings() {
 				log.Printf("grab %s+0x%x: %v", k.ModName, uint32(sym), err)
 			}
 		}
+		cm, _ := k.CtrlMask()
 		for _, b := range bindings {
 			mods := k.Mod
 			if b.shift {
 				mods |= xproto.ModMaskShift
+			}
+			if b.ctrl {
+				mods |= cm
 			}
 			grab(b.sym, mods)
 		}
@@ -494,4 +498,13 @@ func (km *KeyboardManager) eventKeysym(kc xproto.Keycode, state uint16) xproto.K
 		return sym
 	}
 	return rep.Keysyms[base]
+}
+
+// CtrlMask is the modifier the bindings add to Mod as Ctrl, and its name:
+// Alt when Mod is Ctrl already.
+func (k *KeyboardManager) CtrlMask() (uint16, string) {
+	if k.Mod == xproto.ModMaskControl {
+		return xproto.ModMask1, "Alt"
+	}
+	return xproto.ModMaskControl, "Ctrl"
 }
