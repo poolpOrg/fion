@@ -15,15 +15,23 @@ const scratchpadW, scratchpadH = 640, 480
 func (s *Screen) scratchpadGeometry() Geometry {
 	g := s.Geometry()
 	if saved, ok := savedScratchpad(int(g.W), int(g.H)); ok {
+		saved.X, saved.Y = saved.X+g.X, saved.Y+g.Y
 		return saved
 	}
 	w, h := min(uint16(scaled(scratchpadW)), g.W-2), min(uint16(scaled(scratchpadH)), g.H-2)
 	return Geometry{
-		X: int16((g.W - w - 2) / 2),
-		Y: int16((g.H - h - 2) / 2),
+		X: g.X + int16((g.W-w-2)/2),
+		Y: g.Y + int16((g.H-h-2)/2),
 		W: w,
 		H: h,
 	}
+}
+
+// onMonitor returns g, in the root's coordinates, in the monitor's.
+func (s *Screen) onMonitor(g Geometry) Geometry {
+	m := s.Geometry()
+	g.X, g.Y = g.X-m.X, g.Y-m.Y
+	return g
 }
 
 // toggleScratchpad shows the scratchpad, creating it the first time, or

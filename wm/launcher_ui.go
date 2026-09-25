@@ -74,7 +74,7 @@ func newLauncherUI(s *Screen) (*launcherUI, error) {
 	g := s.Geometry()
 	width := min(uint16(launcherW()), g.W-40)
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		int16((g.W-width-2)/2), int16(g.H/4), width, uint16(launcherInputH()), 1,
+		g.X+int16((g.W-width-2)/2), g.Y+int16(g.H/4), width, uint16(launcherInputH()), 1,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{colorBar, colorAccent, xproto.EventMaskExposure})

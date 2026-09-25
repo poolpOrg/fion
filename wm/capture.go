@@ -68,7 +68,7 @@ func canRecord() string {
 func (wm *Manager) captureTargets() (tab rect, hasTab bool, frame, workspace rect) {
 	s := wm.GetActiveScreen()
 	g := s.Geometry()
-	workspace = rect{0, 0, int(g.W), int(g.H)}
+	workspace = rect{int(g.X), int(g.Y), int(g.W), int(g.H)}
 	if s.fullscreen.client != 0 {
 		// the tab covers the screen
 		return workspace, true, workspace, workspace

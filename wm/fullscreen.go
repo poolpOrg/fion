@@ -35,14 +35,16 @@ func (s *Screen) toggleFullscreen() error {
 			return err
 		}
 		xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-			0, 0, g.W, g.H, 0,
+			g.X, g.Y, g.W, g.H, 0,
 			xproto.WindowClassInputOutput, s.Info().RootVisual,
 			xproto.CwBackPixel|xproto.CwOverrideRedirect, []uint32{colorBackground, 1})
 		s.fullscreen.window = w
 	}
 	xproto.MapWindow(conn, s.fullscreen.window)
-	xproto.ConfigureWindow(conn, s.fullscreen.window, xproto.ConfigWindowStackMode,
-		[]uint32{xproto.StackModeAbove})
+	// the monitor may have moved since
+	xproto.ConfigureWindow(conn, s.fullscreen.window,
+		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowStackMode,
+		[]uint32{uint32(g.X), uint32(g.Y), uint32(g.W), uint32(g.H), xproto.StackModeAbove})
 
 	// reparenting a mapped window unmaps it first
 	if c.mapped {

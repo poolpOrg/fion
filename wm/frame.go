@@ -114,6 +114,9 @@ func (f *Frame) wm() *Manager {
 // isActive reports whether f is the frame the bindings act on: the
 // scratchpad when it is shown, the workspace's active frame otherwise.
 func (f *Frame) isActive() bool {
+	if f.screen != f.wm().GetActiveScreen() {
+		return false
+	}
 	if f.floating() {
 		return f.screen.scratchpadShown
 	}

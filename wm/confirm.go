@@ -108,7 +108,7 @@ func (p *confirmPrompt) place() {
 	w := min((len(p.text)+2)*charW(), int(g.W)-2)
 	xproto.ConfigureWindow(p.screen.Conn(), p.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowStackMode,
-		[]uint32{uint32((int(g.W) - w - 2) / 2), uint32(g.H / 4), uint32(w), xproto.StackModeAbove})
+		[]uint32{uint32(int(g.X) + (int(g.W)-w-2)/2), uint32(int(g.Y) + int(g.H)/4), uint32(w), xproto.StackModeAbove})
 }
 
 // hidePrompt hides the prompt and gives the keyboard back.

@@ -85,7 +85,7 @@ func (ws *Workspace) setupInfoBar() error {
 
 	xproto.CreateWindow(
 		ws.Conn(), ws.Screen.Info().RootDepth, w, ws.WorkspaceWindow,
-		geom.X, int16(int(ws.Screen.Info().HeightInPixels)-infoBarOuterH()), // at the bottom
+		0, int16(int(geom.H)-infoBarOuterH()), // at the bottom
 		geom.W-(2), uint16(infoBarInnerH()), // inside its border
 		1, // Set border width to 1px
 		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,

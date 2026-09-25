@@ -142,20 +142,31 @@ const (
 )
 
 // frameTowards returns the leaf next to f on the side dir, in its
-// workspace: among those touching that side, the one sharing the most of
-// it, nil when there is none.
+// workspace or, past its monitor's edge, in the workspace shown on the
+// next monitor: among those touching that side, the one sharing the most
+// of it, nil when there is none.
 func (f *Frame) frameTowards(dir direction) *Frame {
 	fx, fy := f.origin()
 	x0, y0, x1, y1 := int(fx), int(fy), int(fx)+int(f.g.W), int(fy)+int(f.g.H)
+	// the bar at the bottom of a monitor, and its panel, are no frames:
+	// the frames above them reach the monitor below
+	bottom := func(c *Frame, y1 int) int {
+		if g := c.screen.Geometry(); !c.floating() && y1 == int(g.Y)+c.screen.workAreaH() {
+			return int(g.Y) + int(g.H)
+		}
+		return y1
+	}
+	y1 = bottom(f, y1)
 
 	var best *Frame
 	bestShared := 0
-	walk(f.workspace.Root, func(c *Frame) {
+	visit := func(c *Frame) {
 		if !c.leaf || c == f {
 			return
 		}
 		cx, cy := c.origin()
 		a0, b0, a1, b1 := int(cx), int(cy), int(cx)+int(c.g.W), int(cy)+int(c.g.H)
+		b1 = bottom(c, b1)
 		var touches bool
 		var shared int
 		switch dir {
@@ -171,7 +182,15 @@ func (f *Frame) frameTowards(dir direction) *Frame {
 		if touches && shared > bestShared {
 			best, bestShared = c, shared
 		}
-	})
+	}
+	walk(f.workspace.Root, visit)
+	if best == nil {
+		for _, s := range f.wm().Screens {
+			if s != f.screen {
+				walk(s.GetActiveWorkspace().Root, visit)
+			}
+		}
+	}
 	return best
 }
 
@@ -182,8 +201,12 @@ func (wm *Manager) focusFrame(dir direction) error {
 		return fmt.Errorf("the scratchpad is shown")
 	}
 	if next := f.frameTowards(dir); next != nil {
-		f.workspace.ActiveFrame = next
-		f.screen.updateTitleBars()
+		next.workspace.ActiveFrame = next
+		if next.screen != f.screen {
+			wm.setActiveScreen(next.screen)
+		}
+		next.screen.updateTitleBars()
+		wm.updateFocus()
 	}
 	return nil
 }

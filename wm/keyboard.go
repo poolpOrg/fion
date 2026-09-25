@@ -176,7 +176,8 @@ func (k *KeyboardManager) Conn() *xgb.Conn {
 // root. Grabs are held on keycodes, so they must be redone when the keyboard
 // mapping changes.
 func (k *KeyboardManager) GrabBindings() {
-	for _, scr := range k.wm.Screens {
+	// the monitors share the root
+	for _, scr := range k.wm.Screens[:min(1, len(k.wm.Screens))] {
 		root := scr.Info().Root
 		xproto.UngrabKey(k.Conn(), xproto.GrabAny, root, xproto.ModMaskAny)
 		grab := func(sym xproto.Keysym, mods uint16) {

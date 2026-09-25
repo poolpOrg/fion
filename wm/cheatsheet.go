@@ -86,7 +86,7 @@ func (wm *Manager) showCheatSheet() error {
 	h := min((len(c.lines)+2)*panelLineH(), int(g.H)-2)
 	xproto.ConfigureWindow(conn, c.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowStackMode,
-		[]uint32{uint32((int(g.W) - w - 2) / 2), uint32((int(g.H) - h - 2) / 2), uint32(w), uint32(h), xproto.StackModeAbove})
+		[]uint32{uint32(int(g.X) + (int(g.W)-w-2)/2), uint32(int(g.Y) + (int(g.H)-h-2)/2), uint32(w), uint32(h), xproto.StackModeAbove})
 	xproto.MapWindow(conn, c.window)
 	wm.drawCheatSheet()
 	return nil

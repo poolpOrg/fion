@@ -69,7 +69,7 @@ func newSysPanel(s *Screen) (*sysPanel, error) {
 		return nil, err
 	}
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		0, int16(int(g.H)-infoBarOuterH()-p.h), g.W, uint16(p.h), 0,
+		g.X, g.Y+int16(int(g.H)-infoBarOuterH()-p.h), g.W, uint16(p.h), 0,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask,
 		[]uint32{colorBar, xproto.EventMaskExposure | xproto.EventMaskButtonPress})
@@ -120,8 +120,9 @@ func (s *Screen) togglePanel() error {
 	// as high as the summary needs, the frames above it
 	p.h = p.fitHeight()
 	g := s.Geometry()
-	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowY|xproto.ConfigWindowHeight,
-		[]uint32{uint32(int(g.H) - infoBarOuterH() - p.h), uint32(p.h)})
+	xproto.ConfigureWindow(s.Conn(), p.window,
+		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
+		[]uint32{uint32(g.X), uint32(int(g.Y) + int(g.H) - infoBarOuterH() - p.h), uint32(g.W), uint32(p.h)})
 	s.layoutWorkspaces()
 	xproto.MapWindow(s.Conn(), p.window)
 	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowStackMode, []uint32{xproto.StackModeAbove})

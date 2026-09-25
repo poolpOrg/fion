@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
 	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/randr"
 	"github.com/jezek/xgb/xproto"
 )
 
@@ -19,7 +21,17 @@ type Manager struct {
 
 	KeyboardManager *KeyboardManager
 
+	// the monitors, from left to right, and the one with the focus
 	Screens []*Screen
+	active  int
+
+	// whether the server has RandR, to follow the monitors, and whether
+	// they are to be read again
+	hasRandr        bool
+	monitorsPending bool
+
+	// the root's children when fion took over, to adopt at startup
+	existing []xproto.Window
 
 	NumLock uint16
 
@@ -70,7 +82,11 @@ func NewManager() (*Manager, error) {
 		Clients: make(map[xproto.Window]*Client),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
-	loadFont(conn, int(setup.Roots[0].HeightInPixels))
+	// the version fion speaks, for the server to send monitor changes
+	if randr.Init(conn) == nil {
+		_, err := randr.QueryVersion(conn, 1, 5).Reply()
+		wm.hasRandr = err == nil
+	}
 
 	if err := wm.initScreens(); err != nil {
 		wm.Close()
@@ -86,16 +102,19 @@ func NewManager() (*Manager, error) {
 // bottom to top, so that the topmost one ends up the active tab. Those
 // that are unmapped will be managed when they are mapped.
 func (wm *Manager) adoptExisting() {
-	// frames are all on the active screen for now
-	s := wm.GetActiveScreen()
-	for _, win := range s.existing {
+	for _, win := range wm.existing {
 		attr, err := xproto.GetWindowAttributes(wm.Conn(), win).Reply()
 		if err != nil || attr.OverrideRedirect || attr.MapState != xproto.MapStateViewable {
 			continue
 		}
+		// on the monitor it was shown on
+		if g, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(win)).Reply(); err == nil {
+			wm.setActiveScreen(wm.screenAt(g.X+int16(g.Width/2), g.Y+int16(g.Height/2)))
+		}
 		wm.manageWindow(win, true)
 	}
-	s.existing = nil
+	wm.existing = nil
+	wm.setActiveScreen(wm.Screens[0])
 }
 
 func (wm *Manager) tryManage(w xproto.Window) {
@@ -274,13 +293,34 @@ func (wm *Manager) Close() {
 	}
 }
 
+// initScreens takes over the first X screen's root, and makes a Screen of
+// each of its monitors. Servers with several X screens are rare: fion
+// manages the first.
 func (wm *Manager) initScreens() error {
-	for _, scr := range xproto.Setup(wm.xConn).Roots {
-		screen, err := newScreen(wm, scr)
+	info := xproto.Setup(wm.xConn).Roots[0]
+	existing, a, err := wm.initRoot(info)
+	if err != nil {
+		return err
+	}
+	wm.existing = existing
+	ms := queryMonitors(wm.Conn(), wm.hasRandr, info.Root, info.WidthInPixels, info.HeightInPixels)
+	// sized for the primary monitor
+	h := ms[0].g.H
+	for _, m := range ms {
+		if m.primary {
+			h = m.g.H
+		}
+	}
+	loadFont(wm.Conn(), int(h))
+	for _, m := range ms {
+		screen, err := newScreen(wm, info, m, a)
 		if err != nil {
 			return err
 		}
 		wm.Screens = append(wm.Screens, screen)
+	}
+	if wm.hasRandr {
+		watchMonitors(wm.Conn(), info.Root)
 	}
 	return nil
 }
@@ -289,7 +329,36 @@ func (wm *Manager) GetActiveScreen() *Screen {
 	if len(wm.Screens) == 0 {
 		return nil
 	}
-	return wm.Screens[0]
+	return wm.Screens[min(wm.active, len(wm.Screens)-1)]
+}
+
+// setActiveScreen gives s the focus, redrawing the title bars of the
+// monitor that loses it and of s.
+func (wm *Manager) setActiveScreen(s *Screen) {
+	i := slices.Index(wm.Screens, s)
+	if i < 0 || i == wm.active {
+		return
+	}
+	old := wm.GetActiveScreen()
+	wm.active = i
+	old.updateTitleBars()
+	s.updateTitleBars()
+	wm.updateFocus()
+}
+
+// screenAt returns the monitor holding the point x, y of the root, or the
+// nearest one.
+func (wm *Manager) screenAt(x, y int16) *Screen {
+	best, bestD := wm.Screens[0], -1
+	for _, s := range wm.Screens {
+		g := s.Geometry()
+		dx := max(0, int(g.X)-int(x), int(x)-(int(g.X)+int(g.W)-1))
+		dy := max(0, int(g.Y)-int(y), int(y)-(int(g.Y)+int(g.H)-1))
+		if d := dx*dx + dy*dy; bestD < 0 || d < bestD {
+			best, bestD = s, d
+		}
+	}
+	return best
 }
 
 func (wm *Manager) GetActiveWorkspace() *Workspace {
@@ -440,13 +509,15 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.drawCheatSheet()
 			break
 		}
-		if p := wm.GetActiveScreen().prompt; p != nil && (p.shown || p.noticeShown) && ev.Window == p.window {
-			p.draw()
+		if s := wm.promptScreen(ev.Window); s != nil {
+			if p := s.prompt; p.shown || p.noticeShown {
+				p.draw()
+			}
 			break
 		}
-		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
-			if ev.Count == 0 {
-				p.draw()
+		if s := wm.infoBarScreen(ev.Window); s != nil && s.panel != nil && s.panel.window == ev.Window {
+			if s.panel.shown && ev.Count == 0 {
+				s.panel.draw()
 			}
 			break
 		}
@@ -501,13 +572,17 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
-		} else if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Event == p.window &&
-			p.panelClick(int(ev.EventX), int(ev.EventY)) {
+		} else if s := wm.infoBarScreen(ev.Event); s != nil && s.panel != nil && s.panel.shown && ev.Event == s.panel.window &&
+			s.panel.panelClick(int(ev.EventX), int(ev.EventY)) {
 			// a view's name
-		} else if wm.isInfoBar(ev.Event) && ev.Detail == 1 {
-			if err := wm.GetActiveScreen().togglePanel(); err != nil {
+		} else if s := wm.infoBarScreen(ev.Event); s != nil && ev.Detail == 1 {
+			wm.setActiveScreen(s)
+			if err := s.togglePanel(); err != nil {
 				log.Printf("panel: %v", err)
 			}
+		} else if f := wm.frameByWindow(ev.Event); f != nil {
+			// an empty frame
+			wm.clickTitleBar(f, -1)
 		}
 	case xproto.MotionNotifyEvent:
 		wm.dragMotion(ev)
@@ -542,24 +617,42 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			}
 		}
 		*/
+	case randr.ScreenChangeNotifyEvent, randr.NotifyEvent:
+		wm.monitorsChanged()
 	case xproto.ClientMessageEvent:
 		//wm.handleClientMessage(ev)
 	}
 	return false
 }
 
-// isInfoBar reports whether win is an info bar, or the panel expanding it.
-func (wm *Manager) isInfoBar(win xproto.Window) bool {
-	s := wm.GetActiveScreen()
-	if s.panel != nil && s.panel.window == win {
-		return true
-	}
-	for _, ws := range s.Workspaces {
-		if ws.InfoBarWindow == win {
-			return true
+// promptScreen returns the monitor whose prompt win is.
+func (wm *Manager) promptScreen(win xproto.Window) *Screen {
+	for _, s := range wm.Screens {
+		if s.prompt != nil && s.prompt.window == win {
+			return s
 		}
 	}
-	return false
+	return nil
+}
+
+// isInfoBar reports whether win is an info bar, or the panel expanding it.
+func (wm *Manager) isInfoBar(win xproto.Window) bool {
+	return wm.infoBarScreen(win) != nil
+}
+
+// infoBarScreen returns the monitor whose info bar, or panel, win is.
+func (wm *Manager) infoBarScreen(win xproto.Window) *Screen {
+	for _, s := range wm.Screens {
+		if s.panel != nil && s.panel.window == win {
+			return s
+		}
+		for _, ws := range s.Workspaces {
+			if ws.InfoBarWindow == win {
+				return s
+			}
+		}
+	}
+	return nil
 }
 
 // clickTitleBar makes f the active frame and selects the tab at x.
@@ -567,6 +660,7 @@ func (wm *Manager) clickTitleBar(f *Frame, x int16) {
 	if !f.floating() {
 		f.workspace.ActiveFrame = f
 	}
+	wm.setActiveScreen(f.screen)
 	if i := f.tabAt(x); i >= 0 {
 		f.selectClient(i)
 	}

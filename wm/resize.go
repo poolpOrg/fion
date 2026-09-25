@@ -87,7 +87,8 @@ func (f *Frame) resize(dir direction, delta int) bool {
 // the screen and above the bar.
 func (f *Frame) moveEdges(dir direction, delta int, whole bool) {
 	sg := f.screen.Geometry()
-	maxX, maxY := int(sg.W), int(sg.H)-infoBarOuterH()
+	minX, minY := int(sg.X), int(sg.Y)
+	maxX, maxY := minX+int(sg.W), minY+int(sg.H)-infoBarOuterH()
 	// the outer edges, borders included
 	x0, y0 := int(f.g.X), int(f.g.Y)
 	x1, y1 := x0+int(f.g.W)+2, y0+int(f.g.H)+2
@@ -97,21 +98,21 @@ func (f *Frame) moveEdges(dir direction, delta int, whole bool) {
 		if dir == dirLeft {
 			d = -delta
 		}
-		d = max(-x0, min(d, maxX-x1))
+		d = max(minX-x0, min(d, maxX-x1))
 		x0, x1 = x0+d, x1+d
 	case whole:
 		d := delta
 		if dir == dirUp {
 			d = -delta
 		}
-		d = max(-y0, min(d, maxY-y1))
+		d = max(minY-y0, min(d, maxY-y1))
 		y0, y1 = y0+d, y1+d
 	case dir == dirLeft:
-		x0 = max(0, min(x0-delta, x1-2-minFrameSize()))
+		x0 = max(minX, min(x0-delta, x1-2-minFrameSize()))
 	case dir == dirRight:
 		x1 = min(maxX, max(x1+delta, x0+2+minFrameSize()))
 	case dir == dirUp:
-		y0 = max(0, min(y0-delta, y1-2-minFrameSize()))
+		y0 = max(minY, min(y0-delta, y1-2-minFrameSize()))
 	case dir == dirDown:
 		y1 = min(maxY, max(y1+delta, y0+2+minFrameSize()))
 	}
@@ -174,7 +175,7 @@ func (wm *Manager) startResize(grow bool) error {
 			p.setText(text())
 		case XK_Return, XK_KP_Enter:
 			if f.floating() {
-				saveScratchpad(f.g)
+				saveScratchpad(f.screen.onMonitor(f.g))
 			}
 			return true
 		case XK_Escape:
@@ -203,7 +204,7 @@ func (wm *Manager) startMove() error {
 		}
 		switch sym {
 		case XK_Return, XK_KP_Enter:
-			saveScratchpad(f.g)
+			saveScratchpad(f.screen.onMonitor(f.g))
 			return true
 		case XK_Escape:
 			undo()

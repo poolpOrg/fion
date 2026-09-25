@@ -128,6 +128,10 @@ func (f *Frame) origin() (int16, int16) {
 	x, y := f.g.X, f.g.Y
 	if f.floating() {
 		x, y = x+1, y+1 // its border
+	} else {
+		// in its workspace, on its monitor
+		g := f.screen.Geometry()
+		x, y = x+g.X, y+g.Y
 	}
 	for p := f.parent; p != nil; p = p.parent {
 		x, y = x+p.g.X, y+p.g.Y
@@ -144,22 +148,25 @@ func (wm *Manager) frameAt(x, y int16) (*Frame, int16, int16) {
 		return fx >= 0 && fy >= 0 && int(fx) < int(f.g.W) && int(fy) < int(f.g.H), fx, fy
 	}
 
-	s := wm.GetActiveScreen()
-	if s.scratchpadShown {
-		if ok, fx, fy := inside(s.scratchpad); ok {
-			return s.scratchpad, fx, fy
+	for _, s := range wm.Screens {
+		if s.scratchpadShown {
+			if ok, fx, fy := inside(s.scratchpad); ok {
+				return s.scratchpad, fx, fy
+			}
 		}
 	}
 	var found *Frame
 	var fx, fy int16
-	walk(s.GetActiveWorkspace().Root, func(f *Frame) {
-		if !f.leaf || found != nil {
-			return
-		}
-		if ok, x, y := inside(f); ok {
-			found, fx, fy = f, x, y
-		}
-	})
+	for _, s := range wm.Screens {
+		walk(s.GetActiveWorkspace().Root, func(f *Frame) {
+			if !f.leaf || found != nil {
+				return
+			}
+			if ok, x, y := inside(f); ok {
+				found, fx, fy = f, x, y
+			}
+		})
+	}
 	return found, fx, fy
 }
 
