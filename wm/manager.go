@@ -73,6 +73,9 @@ type Manager struct {
 
 	// the frames the windows of processes fion started go to
 	placements map[int32]placement
+
+	// the notification line, created with the first message
+	notes *noteLine
 }
 
 func NewManager() (*Manager, error) {
@@ -402,6 +405,10 @@ func (wm *Manager) setActiveScreen(s *Screen) {
 	old.updateTitleBars()
 	s.updateTitleBars()
 	wm.updateFocus()
+	// the messages follow the focus
+	if wm.notes != nil && len(wm.notes.shown) > 0 {
+		wm.drawNotifications()
+	}
 }
 
 // screenAt returns the monitor holding the point x, y of the root, or the
@@ -510,6 +517,11 @@ func (wm *Manager) Run() error {
 	}()
 
 	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
+	if l, err := wm.listenControl(socketPath(os.Getenv("DISPLAY"))); err != nil {
+		log.Printf("control socket: %v; fion msg won't reach this fion", err)
+	} else {
+		defer func() { l.Close(); os.Remove(l.Addr().String()) }()
+	}
 
 	for {
 		select {
@@ -518,6 +530,7 @@ func (wm *Manager) Run() error {
 			return nil
 
 		case <-ticker.C:
+			wm.expireNotifications()
 			if err := wm.recordingFailed(); err != nil {
 				wm.alert("Recording stopped: " + err.Error())
 			}
@@ -563,6 +576,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case xproto.ExposeEvent:
 		if wm.cheatSheetShown() && ev.Window == wm.cheat.window {
 			wm.drawCheatSheet()
+			break
+		}
+		if nl := wm.notes; nl != nil && ev.Window == nl.window {
+			nl.draw()
 			break
 		}
 		if s := wm.promptScreen(ev.Window); s != nil {
@@ -630,6 +647,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		}
 		if wm.cheatSheetShown() {
 			wm.hideCheatSheet()
+			break
+		}
+		if nl := wm.notes; nl != nil && ev.Event == nl.window {
+			wm.clearNotifications()
 			break
 		}
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {

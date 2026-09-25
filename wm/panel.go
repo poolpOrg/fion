@@ -52,7 +52,7 @@ type sysPanel struct {
 	gathered  time.Time
 }
 
-var panelViews = []string{"Summary", "CPU", "Memory", "Disk", "Network", "Sensors", "Ports"}
+var panelViews = []string{"Summary", "CPU", "Memory", "Disk", "Network", "Sensors", "Ports", "Messages"}
 
 // the panel's height in lines, at least what the graphs need, at most
 // half the screen
@@ -116,6 +116,7 @@ func (s *Screen) togglePanel() error {
 		p.shown = false
 		xproto.UnmapWindow(s.Conn(), p.window)
 		s.layoutWorkspaces()
+		s.wm.drawNotifications()
 		s.wm.KeyboardManager.UngrabKeyboard()
 		return nil
 	}
@@ -124,6 +125,7 @@ func (s *Screen) togglePanel() error {
 		return err
 	}
 	p.shown = true
+	defer s.wm.drawNotifications()
 	p.snap = p.sampler.sample()
 	p.hist.record(p.snap)
 	// as high as the summary needs, the frames above it
@@ -344,6 +346,8 @@ func (p *sysPanel) draw() {
 		p.drawSensors(area)
 	case "Ports":
 		p.drawPorts(area)
+	case "Messages":
+		p.drawMessages(area)
 	}
 }
 
@@ -853,6 +857,26 @@ func (p *sysPanel) drawSensors(a rect) {
 		cx, cy := a.x+(i%cols)*cellW, a.y+(i/cols)*cellH
 		p.label(cx, cy, fmt.Sprintf("%-22.22s %5.1f\xb0C", t.name, t.temp), colorText)
 		p.graph(rect{cx, cy + lh, cellW - panelPad, cellH - lh - lh/2}, "temp:"+t.name, 100, byTemp)
+	}
+}
+
+// drawMessages lists the last messages posted, the newest first.
+func (p *sysPanel) drawMessages(a rect) {
+	var history []*notification
+	if nl := p.screen.wm.notes; nl != nil {
+		history = nl.history
+	}
+	if len(history) == 0 {
+		p.label(a.x, a.y, "no message yet: fion msg posts some, as fion msg -l error build failed", colorDim)
+		return
+	}
+	c := &column{p: p, x: a.x, y: a.y, w: a.w, bottom: a.y + a.h}
+	for i := len(history) - 1; i >= 0 && c.room(); i-- {
+		n := history[i]
+		c.text(c.x, fmt.Sprintf("%-5s", levelNames[n.level]), n.level.color(), true)
+		c.text(c.x+6*charW(), n.at.Format("Jan 2 15:04:05"), colorDim, false)
+		c.text(c.x+22*charW(), latin1(n.text), colorText, false)
+		c.y += panelLineH()
 	}
 }
 

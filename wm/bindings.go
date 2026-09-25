@@ -66,6 +66,7 @@ var bindings = []binding{
 	{XK_d, false, false, false, "close what has the focus, asking first", func(wm *Manager) error { return wm.requestClose() }},
 	{XK_Return, false, false, false, "launcher", func(wm *Manager) error { return wm.openLauncher() }},
 	{XK_Space, false, false, false, "show / hide the scratchpad", func(wm *Manager) error { return wm.GetActiveScreen().toggleScratchpad() }},
+	{XK_n, false, false, false, "dismiss the messages", func(wm *Manager) error { wm.clearNotifications(); return nil }},
 	{XK_s, false, false, false, "show / hide the system panel", func(wm *Manager) error { return wm.GetActiveScreen().togglePanel() }},
 
 	{XK_Plus, false, false, true, "resize, growing: then arrows, Return", func(wm *Manager) error { return wm.startResize(true) }},
