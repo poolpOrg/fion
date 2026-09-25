@@ -1,5 +1,5 @@
-// Package fion holds the project's files that the window manager embeds.
-package fion
+// Package assets holds the project's files that the window manager embeds.
+package assets
 
 import _ "embed"
 

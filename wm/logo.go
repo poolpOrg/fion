@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/jezek/xgb/xproto"
-	"github.com/poolpOrg/fion"
+	"github.com/poolpOrg/fion/assets"
 )
 
 // A workspace that is a single empty frame shows the project's logo,
@@ -29,7 +29,7 @@ var (
 // loadLogo decodes the embedded logo, once.
 func loadLogo() *logoMask {
 	logoOnce.Do(func() {
-		img, err := jpeg.Decode(bytes.NewReader(fion.Logo))
+		img, err := jpeg.Decode(bytes.NewReader(assets.Logo))
 		if err != nil {
 			log.Printf("logo: %v", err)
 			return

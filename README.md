@@ -1,6 +1,6 @@
 # fion
 
-![](fion.jpg)
+![](assets/fion.jpg)
 
 fion is a static tiling window manager for X11, inspired by
 [ion](https://tuomov.iki.fi/software/ion/), written in Go on top of
@@ -46,7 +46,11 @@ building
 --
 fion needs Go 1.25 or later:
 
-    $ go build ./cmd/fion
+    $ go install github.com/poolpOrg/fion@latest
+
+or, from a clone:
+
+    $ go build
 
 
 key bindings
