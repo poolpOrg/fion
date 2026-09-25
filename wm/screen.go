@@ -31,6 +31,9 @@ type Screen struct {
 
 	// the expanded info bar, created the first time it is shown
 	panel *sysPanel
+
+	// the window asking for confirmation, created the first time
+	prompt *confirmPrompt
 }
 
 type atoms struct {

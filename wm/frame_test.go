@@ -122,7 +122,7 @@ func checkTree(t *testing.T, ws *Workspace) {
 	}
 }
 
-// removeActive removes the active frame the way the Super+w d binding does.
+// removeActive removes the active frame the way Super+d, d does.
 func removeActive(t *testing.T, ws *Workspace) {
 	t.Helper()
 	f := ws.ActiveFrame
