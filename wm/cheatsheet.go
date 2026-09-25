@@ -25,6 +25,7 @@ func cheatSheetLines(mod string) []string {
 	rows = append(rows,
 		[2]string{mod + "+?", "this cheat sheet"},
 		[2]string{mod + "+Escape", "quit fion"},
+		[2]string{"Print", "capture a screenshot or a video, Print again stops it"},
 		[2]string{"", ""},
 		[2]string{"click a tab", "select it"},
 		[2]string{"drag a tab", "move it to another frame, or within its bar"},

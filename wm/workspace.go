@@ -302,8 +302,13 @@ func (ws *Workspace) updateInfoBar() {
 		return x + img.w
 	}
 
-	// where we are, then the operating system
+	// recording, then where we are, then the operating system
 	x := 4
+	if rec := ws.Manager.recording; rec != nil {
+		d := time.Since(rec.started).Round(time.Second)
+		x = text(x, barText{s: fmt.Sprintf("REC %d:%02d", int(d.Minutes()), int(d.Seconds())%60), alert: true})
+		x = text(x, barText{s: " | "})
+	}
 	screen, workspace, count := ws.position()
 	x = text(x, barText{s: fmt.Sprintf("[%02x:%02x/%02x] | ", screen, workspace, count)})
 	system := thisOS()

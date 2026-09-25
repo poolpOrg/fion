@@ -21,6 +21,8 @@ type confirmPrompt struct {
 	text   string
 	shown  bool
 	action func() // what confirming Mod+d's question does
+
+	noticeShown bool // showing a notice, which doesn't take the keyboard
 }
 
 // closeQuestion is what Mod+d asks about the active frame, "" when there is

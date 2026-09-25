@@ -76,6 +76,11 @@ in a cheat sheet:
 | `Super+s`                       | show / hide the system panel, as clicking the bar does |
 | `Super+?`                       | this list                                |
 | `Super+Escape`                  | quit fion                                |
+| `Print`                         | capture: `s` a screenshot or `v` a video, then `t` the tab, `f` the frame or `w` the workspace; `Print` again stops a video |
+
+Screenshots are saved as PNG, and videos, recorded with ffmpeg, as MP4, in
+`$XDG_PICTURES_DIR`, or `~/Pictures`, or the home directory.  The bar
+shows `REC` while recording.
 
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
 to the frame it is dropped on, the scratchpad included, or to another place

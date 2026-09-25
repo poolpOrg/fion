@@ -192,6 +192,7 @@ func (k *KeyboardManager) GrabBindings() {
 			grab(b.sym, mods)
 		}
 		grab(XK_Escape, k.Mod)
+		grab(XK_Print, 0)
 		for alias := range keyAliases {
 			if alias != XK_ISO_LeftTab {
 				grab(alias, k.Mod)
