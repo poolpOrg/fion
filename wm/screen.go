@@ -34,6 +34,9 @@ type Screen struct {
 
 	// the window asking for confirmation, created the first time
 	prompt *confirmPrompt
+
+	// the tab shown full screen, if any
+	fullscreen fullscreen
 }
 
 type atoms struct {

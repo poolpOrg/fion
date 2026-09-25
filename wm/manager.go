@@ -122,6 +122,8 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	// Make a tab for client
 	bw := uint32(1)
 
+	// in its frame, not over it
+	wm.GetActiveScreen().leaveFullscreen()
 	frame := wm.GetActiveFrame()
 	parentId := frame.GetWindow()
 
@@ -165,6 +167,7 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	if !ok {
 		return nil
 	}
+	c.frame.screen.forgetFullscreen(win)
 	delete(wm.Clients, win)
 	c.frame.RemoveClient(win)
 	c.frame.showActiveClient()

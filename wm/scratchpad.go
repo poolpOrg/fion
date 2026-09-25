@@ -63,7 +63,9 @@ func (s *Screen) raiseScratchpad() {
 // it is shown, and lets it follow the pointer otherwise.
 func (wm *Manager) updateFocus() {
 	focus := xproto.Window(xproto.InputFocusPointerRoot)
-	if s := wm.GetActiveScreen(); s != nil && s.scratchpadShown {
+	if s := wm.GetActiveScreen(); s != nil && s.fullscreen.client != 0 {
+		focus = s.fullscreen.client
+	} else if s != nil && s.scratchpadShown {
 		if c := s.scratchpad.GetActiveClient(); c != 0 {
 			focus = c
 		}

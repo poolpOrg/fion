@@ -69,6 +69,10 @@ func (wm *Manager) captureTargets() (tab rect, hasTab bool, frame, workspace rec
 	s := wm.GetActiveScreen()
 	g := s.Geometry()
 	workspace = rect{0, 0, int(g.W), int(g.H)}
+	if s.fullscreen.client != 0 {
+		// the tab covers the screen
+		return workspace, true, workspace, workspace
+	}
 
 	f := wm.GetActiveFrame()
 	x, y := f.origin()

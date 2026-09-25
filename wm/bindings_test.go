@@ -116,3 +116,61 @@ func TestCheatSheet(t *testing.T) {
 		t.Fatalf("a key didn't close the cheat sheet")
 	}
 }
+
+func TestFullscreen(t *testing.T) {
+	wm := newTestManager(t)
+	mod := wm.KeyboardManager.Mod
+	s := wm.GetActiveScreen()
+	f := wm.GetActiveFrame()
+	newTestClient(t, wm)
+	win := newTestClient(t, wm)
+	drainEvents(t, wm)
+
+	parent := func() xproto.Window {
+		t.Helper()
+		r, err := xproto.QueryTree(wm.Conn(), win).Reply()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Parent
+	}
+	geometry := func() *xproto.GetGeometryReply {
+		t.Helper()
+		g, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(win)).Reply()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+
+	press(t, wm, XK_f, mod)
+	g := geometry()
+	if s.fullscreen.client != win || parent() != s.fullscreen.window ||
+		g.X != 0 || g.Y != 0 || g.Width != s.Geometry().W || g.Height != s.Geometry().H || g.BorderWidth != 0 {
+		t.Fatalf("Mod+f: parent 0x%x, geometry %+v", parent(), g)
+	}
+	if _, hasTab, frame, _ := wm.captureTargets(); !hasTab || frame.w != int(s.Geometry().W) {
+		t.Fatalf("captures of a full screen tab: %+v", frame)
+	}
+
+	// Mod+f again puts it back where it was
+	press(t, wm, XK_f, mod)
+	g, want := geometry(), f.clientGeometry()
+	if s.fullscreen.client != 0 || parent() != f.window ||
+		uint32(g.Y) != want[1] || uint32(g.Width) != want[2] || g.BorderWidth != 1 {
+		t.Fatalf("Mod+f again: parent 0x%x, geometry %+v, want %v", parent(), g, want)
+	}
+	checkTabs(t, f)
+
+	// another binding puts it back first
+	press(t, wm, XK_f, mod)
+	press(t, wm, XK_Tab, mod)
+	if s.fullscreen.client != 0 || parent() != f.window || f.activeClient != 0 {
+		t.Fatalf("Mod+Tab while full screen: parent 0x%x, active tab %d", parent(), f.activeClient)
+	}
+	checkTabs(t, f)
+	drainEvents(t, wm)
+	if _, ok := wm.Clients[win]; !ok {
+		t.Fatalf("the client was forgotten, its reparenting taken for a withdrawal")
+	}
+}
