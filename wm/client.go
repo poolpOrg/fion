@@ -13,4 +13,7 @@ type Client struct {
 	// whether fion last mapped or unmapped the window: only the active tab
 	// of a frame is mapped
 	mapped bool
+
+	// asked to close with WM_DELETE_WINDOW: asked again, it is killed
+	closeRequested bool
 }

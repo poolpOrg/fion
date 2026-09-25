@@ -54,7 +54,7 @@ action key without any modifier.
 | `Super+w` `n` / `p`  | next / previous workspace                           |
 | `Super+w` `h`        | split the active frame top / bottom                 |
 | `Super+w` `v`        | split the active frame left / right                 |
-| `Super+w` `d`        | close the active client; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
+| `Super+w` `d`        | ask the active window to close, and force it when pressed again or when the window can't be asked; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
 | `Super+f` `n` / `p`  | next / previous frame                               |
 | `Super+t` `n` / `p`  | next / previous tab in the active frame             |
 | `Super+space`        | show / hide the scratchpad                          |
@@ -115,7 +115,6 @@ known limitations
 - splitting halves a frame, frames can't be resized
 - every window gets a tab, dialogs and transient windows included
 - ConfigureRequest events are ignored
-- `Super+w` `d` destroys the client window instead of asking it to close
 - only the X screens are handled, not RandR outputs: on a multi-monitor
   setup a workspace spans all the monitors
 - after removing a workspace, the one marked active may not be the one

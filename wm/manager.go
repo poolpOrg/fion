@@ -169,12 +169,47 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	return c
 }
 
-// unmanageWindow destroys a client window at the user's request.
-func (wm *Manager) unmanageWindow(win xproto.Window) {
-	if wm.forgetClient(win) == nil {
+// closeClient asks a client to close its window, as a close button does,
+// when it takes part in WM_DELETE_WINDOW and wasn't asked before. Otherwise
+// it kills the client, closing its connection to the server. Either way the
+// window going away is what drops it from fion.
+func (wm *Manager) closeClient(win xproto.Window) {
+	c, ok := wm.Clients[win]
+	if !ok {
 		return
 	}
-	xproto.DestroyWindow(wm.Conn(), win)
+	atoms := c.frame.screen.atoms
+	if !c.closeRequested && wm.supportsProtocol(win, atoms.WM_DELETE_WINDOW) {
+		c.closeRequested = true
+		ev := xproto.ClientMessageEvent{
+			Format: 32,
+			Window: win,
+			Type:   atoms.WM_PROTOCOLS,
+			Data: xproto.ClientMessageDataUnionData32New(
+				[]uint32{uint32(atoms.WM_DELETE_WINDOW), xproto.TimeCurrentTime, 0, 0, 0}),
+		}
+		xproto.SendEvent(wm.Conn(), false, win, xproto.EventMaskNoEvent, string(ev.Bytes()))
+		log.Printf("0x%x asked to close", win)
+		return
+	}
+	xproto.KillClient(wm.Conn(), uint32(win))
+	log.Printf("0x%x killed", win)
+}
+
+// supportsProtocol reports whether a window lists protocol in its
+// WM_PROTOCOLS.
+func (wm *Manager) supportsProtocol(win xproto.Window, protocol xproto.Atom) bool {
+	atoms := wm.GetActiveScreen().atoms
+	r, err := xproto.GetProperty(wm.Conn(), false, win, atoms.WM_PROTOCOLS, xproto.AtomAtom, 0, 64).Reply()
+	if err != nil || r.Format != 32 {
+		return false
+	}
+	for i := 0; i+4 <= len(r.Value); i += 4 {
+		if xproto.Atom(xgb.Get32(r.Value[i:])) == protocol {
+			return true
+		}
+	}
+	return false
 }
 
 func (wm *Manager) handleDestroyNotify(ev xproto.DestroyNotifyEvent) {
@@ -481,12 +516,13 @@ func (wm *Manager) clickTitleBar(f *Frame, x int16) {
 	f.screen.updateTitleBars()
 }
 
-// closeActive closes the active client or, in an empty frame, removes the
-// frame, or in the last frame of a workspace, the workspace.
+// closeActive asks the active client to close, then kills it when asked
+// again, or in an empty frame, removes the frame, or in the last frame of
+// a workspace, the workspace.
 func (wm *Manager) closeActive() error {
 	frame := wm.GetActiveFrame()
 	if client := frame.GetActiveClient(); client != 0 {
-		wm.unmanageWindow(client)
+		wm.closeClient(client)
 		return nil
 	}
 	switch {
