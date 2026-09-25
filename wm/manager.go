@@ -198,6 +198,11 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	wm.grabClicks(win)
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
+	wm.updateClientList()
+	if wm.wantsFullscreen(win) {
+		frame.screen.leaveFullscreen()
+		frame.screen.toggleFullscreen()
+	}
 	wm.updateFocus()
 
 	// Attach to active Leaf as a new tab
@@ -217,6 +222,7 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	c.frame.RemoveClient(win)
 	c.frame.showActiveClient()
 	c.frame.updateTitleBar()
+	wm.updateClientList()
 	wm.updateFocus()
 	return c
 }
@@ -604,7 +610,7 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.KeyboardManager.MappingChanged()
 		}
 	case xproto.PropertyNotifyEvent:
-		if ev.Atom == xproto.AtomWmName {
+		if name, _ := netWMName(wm.Conn()); ev.Atom == xproto.AtomWmName || ev.Atom == name {
 			if c, ok := wm.Clients[ev.Window]; ok {
 				c.frame.updateTitleBar()
 			}
@@ -669,7 +675,7 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case randr.ScreenChangeNotifyEvent, randr.NotifyEvent:
 		wm.monitorsChanged()
 	case xproto.ClientMessageEvent:
-		//wm.handleClientMessage(ev)
+		wm.handleClientMessage(ev)
 	}
 	return false
 }

@@ -132,6 +132,7 @@ func (wm *Manager) manageDialog(win xproto.Window, mapped bool) {
 		wm.dialogFocus = win
 	}
 	log.Printf("managing 0x%x, floating", win)
+	wm.updateClientList()
 	wm.updateFocus()
 }
 
@@ -165,6 +166,7 @@ func (wm *Manager) forgetDialog(win xproto.Window) bool {
 		return false
 	}
 	delete(wm.dialogs, win)
+	wm.updateClientList()
 	if wm.dialogFocus == win {
 		wm.dialogFocus = 0
 		for _, o := range wm.dialogs {

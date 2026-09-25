@@ -48,7 +48,7 @@ type atoms struct {
 	NET_WM_WINDOW_TYPE_DIALOG, NET_WM_WINDOW_TYPE_UTILITY, NET_WM_WINDOW_TYPE_SPLASH        xproto.Atom
 	NET_WM_WINDOW_TYPE_TOOLBAR, NET_WM_WINDOW_TYPE_NOTIFICATION, NET_WM_WINDOW_TYPE_DESKTOP xproto.Atom
 	NET_WM_STATE, NET_WM_STATE_FULLSCREEN, NET_WM_STATE_DEMANDS_ATTENTION                   xproto.Atom
-	NET_WM_PID, NET_CLOSE_WINDOW, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP               xproto.Atom
+	NET_WM_PID, NET_CLOSE_WINDOW                                                            xproto.Atom
 }
 
 func (s *Screen) internAtom(name string) xproto.Atom {
@@ -85,8 +85,6 @@ func (s *Screen) getAtoms() atoms {
 		NET_WM_STATE_DEMANDS_ATTENTION:  s.internAtom("_NET_WM_STATE_DEMANDS_ATTENTION"),
 		NET_WM_PID:                      s.internAtom("_NET_WM_PID"),
 		NET_CLOSE_WINDOW:                s.internAtom("_NET_CLOSE_WINDOW"),
-		NET_NUMBER_OF_DESKTOPS:          s.internAtom("_NET_NUMBER_OF_DESKTOPS"),
-		NET_CURRENT_DESKTOP:             s.internAtom("_NET_CURRENT_DESKTOP"),
 	}
 }
 
@@ -165,8 +163,7 @@ func (s *Screen) initEWMH() error {
 	s.setProp32(s.Info().Root, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setProp32(w, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setPropStr(w, s.atoms.NET_WM_NAME, s.atoms.UTF8_STRING, "fion")
-	supported := []xproto.Atom{s.atoms.NET_SUPPORTED, s.atoms.NET_SUPPORTING_WM_CHECK, s.atoms.NET_CLIENT_LIST, s.atoms.NET_ACTIVE_WINDOW}
-	s.setPropAtoms(s.Info().Root, s.atoms.NET_SUPPORTED, supported)
+	s.setPropAtoms(s.Info().Root, s.atoms.NET_SUPPORTED, s.supportedAtoms())
 	//wm.updateClientList()
 	return nil
 }

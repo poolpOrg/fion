@@ -3,6 +3,7 @@ package wm
 import (
 	"fmt"
 	"log"
+	"unicode/utf8"
 
 	"github.com/jezek/xgb/xproto"
 )
@@ -116,7 +117,7 @@ func (p *confirmPrompt) setText(text string) {
 // screen.
 func (p *confirmPrompt) place() {
 	g := p.screen.Geometry()
-	w := min((len(p.text)+2)*charW(), int(g.W)-2)
+	w := min((utf8.RuneCountInString(p.text)+2)*charW(), int(g.W)-2)
 	xproto.ConfigureWindow(p.screen.Conn(), p.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowStackMode,
 		[]uint32{uint32(int(g.X) + (int(g.W)-w-2)/2), uint32(int(g.Y) + int(g.H)/4), uint32(w), xproto.StackModeAbove})
@@ -161,14 +162,9 @@ func (wm *Manager) promptWindow(s *Screen) (*confirmPrompt, error) {
 }
 
 func (p *confirmPrompt) draw() {
-	text := p.text
-	if len(text) > 255 {
-		text = text[:255]
-	}
 	conn := p.screen.Conn()
 	xproto.ClearArea(conn, false, p.window, 0, 0, 0, 0)
-	xproto.ImageText8(conn, byte(len(text)), xproto.Drawable(p.window), p.gc,
-		int16(charW()), int16(baseline(launcherInputH())), text)
+	imageText(conn, xproto.Drawable(p.window), p.gc, false, int16(charW()), int16(baseline(launcherInputH())), p.text)
 }
 
 // confirmKey answers the prompt: d, with or without modifiers, confirms,

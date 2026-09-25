@@ -56,6 +56,7 @@ func (s *Screen) toggleFullscreen() error {
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
 		[]uint32{0, 0, uint32(g.W), uint32(g.H)})
 	s.fullscreen.client = win
+	s.wm.setFullscreenState(win, true)
 	s.wm.updateFocus()
 	return nil
 }
@@ -69,6 +70,7 @@ func (s *Screen) leaveFullscreen() {
 	s.fullscreen.client = 0
 	conn := s.Conn()
 	if c, ok := s.wm.Clients[win]; ok {
+		s.wm.setFullscreenState(win, false)
 		if c.mapped {
 			c.ignoreUnmap++
 		}

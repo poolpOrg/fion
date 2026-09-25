@@ -86,14 +86,11 @@ func (wm *Manager) createDragWindow(d *tabDrag) error {
 // drawDragWindow draws the dragged tab's title, on Expose.
 func (wm *Manager) drawDragWindow() {
 	d := wm.drag
-	title := getWindowName(wm.Conn(), d.client)
-	if n := (int(d.w) - 8) / charW(); len(title) > n {
-		title = title[:max(n, 0)]
-	}
+	title := truncateRunes(getWindowName(wm.Conn(), d.client), (int(d.w)-8)/charW())
 	gc := d.frame.barGC
 	xproto.ChangeGC(wm.Conn(), gc, xproto.GcForeground|xproto.GcBackground,
 		[]uint32{colorAccentText, colorAccent})
-	xproto.ImageText8(wm.Conn(), byte(len(title)), xproto.Drawable(d.window), gc, 4, int16(baseline(titleH()-2)), title)
+	imageText(wm.Conn(), xproto.Drawable(d.window), gc, d.frame.barUnicode, 4, int16(baseline(titleH()-2)), title)
 }
 
 // endTabDrag drops the dragged tab where the button was released.
