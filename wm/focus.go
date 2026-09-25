@@ -154,9 +154,3 @@ func (wm *Manager) newNoFocusWindow(info xproto.ScreenInfo) error {
 	wm.noFocus = w
 	return nil
 }
-
-// focusedDialog is the floating dialog with the focus, 0 when none.
-func (wm *Manager) focusedDialog() xproto.Window { return 0 }
-
-// dialogClicked focuses the dialog win, and reports whether it is one.
-func (wm *Manager) dialogClicked(win xproto.Window) bool { return false }

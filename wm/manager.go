@@ -45,6 +45,11 @@ type Manager struct {
 	Clients map[xproto.Window]*Client
 	Frames  map[xproto.Window]*Frame
 
+	// the floating dialogs, and the one with the focus, 0 when the frames
+	// have it
+	dialogs     map[xproto.Window]*dialog
+	dialogFocus xproto.Window
+
 	// tab being dragged, nil when none
 	drag *tabDrag
 
@@ -86,6 +91,7 @@ func NewManager() (*Manager, error) {
 		//Atoms:   getAtoms(conn),
 		Frames:  make(map[xproto.Window]*Frame),
 		Clients: make(map[xproto.Window]*Client),
+		dialogs: make(map[xproto.Window]*dialog),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
 	// the version fion speaks, for the server to send monitor changes
@@ -117,7 +123,7 @@ func (wm *Manager) adoptExisting() {
 		if g, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(win)).Reply(); err == nil {
 			wm.setActiveScreen(wm.screenAt(g.X+int16(g.Width/2), g.Y+int16(g.Height/2)))
 		}
-		wm.manageWindow(win, true)
+		wm.manage(win, true)
 	}
 	wm.existing = nil
 	wm.setActiveScreen(wm.Screens[0])
@@ -134,7 +140,19 @@ func (wm *Manager) tryManage(w xproto.Window) {
 	if attr.MapState != xproto.MapStateUnmapped {
 		return
 	}
-	wm.manageWindow(w, false)
+	wm.manage(w, false)
+}
+
+// manage makes win a tab, a floating dialog, or shows it as it is.
+func (wm *Manager) manage(win xproto.Window, mapped bool) {
+	switch wm.windowKind(win) {
+	case kindDialog:
+		wm.manageDialog(win, mapped)
+	case kindUnmanaged:
+		xproto.MapWindow(wm.Conn(), win)
+	default:
+		wm.manageWindow(win, mapped)
+	}
 }
 
 // manageWindow makes win a tab of the active frame. mapped tells whether
@@ -215,19 +233,25 @@ func (wm *Manager) closeClient(win xproto.Window) {
 	atoms := c.frame.screen.atoms
 	if !c.closeRequested && wm.supportsProtocol(win, atoms.WM_DELETE_WINDOW) {
 		c.closeRequested = true
-		ev := xproto.ClientMessageEvent{
-			Format: 32,
-			Window: win,
-			Type:   atoms.WM_PROTOCOLS,
-			Data: xproto.ClientMessageDataUnionData32New(
-				[]uint32{uint32(atoms.WM_DELETE_WINDOW), xproto.TimeCurrentTime, 0, 0, 0}),
-		}
-		xproto.SendEvent(wm.Conn(), false, win, xproto.EventMaskNoEvent, string(ev.Bytes()))
-		log.Printf("0x%x asked to close", win)
+		wm.sendDelete(win)
 		return
 	}
 	xproto.KillClient(wm.Conn(), uint32(win))
 	log.Printf("0x%x killed", win)
+}
+
+// sendDelete asks win to close, with WM_DELETE_WINDOW.
+func (wm *Manager) sendDelete(win xproto.Window) {
+	atoms := wm.Screens[0].atoms
+	ev := xproto.ClientMessageEvent{
+		Format: 32,
+		Window: win,
+		Type:   atoms.WM_PROTOCOLS,
+		Data: xproto.ClientMessageDataUnionData32New(
+			[]uint32{uint32(atoms.WM_DELETE_WINDOW), xproto.TimeCurrentTime, 0, 0, 0}),
+	}
+	xproto.SendEvent(wm.Conn(), false, win, xproto.EventMaskNoEvent, string(ev.Bytes()))
+	log.Printf("0x%x asked to close", win)
 }
 
 // supportsProtocol reports whether a window lists protocol in its
@@ -247,6 +271,9 @@ func (wm *Manager) supportsProtocol(win xproto.Window, protocol xproto.Atom) boo
 }
 
 func (wm *Manager) handleDestroyNotify(ev xproto.DestroyNotifyEvent) {
+	if wm.forgetDialog(ev.Window) {
+		return
+	}
 	if wm.forgetClient(ev.Window) != nil {
 		log.Printf("0x%x destroyed", ev.Window)
 	}
@@ -256,6 +283,15 @@ func (wm *Manager) handleUnmapNotify(ev xproto.UnmapNotifyEvent) {
 	// A window that is a child of the root, as when it is adopted, is also
 	// reported to the root: only count the report on the window itself.
 	if ev.Event != ev.Window {
+		return
+	}
+	if d, ok := wm.dialogs[ev.Window]; ok {
+		if d.ignoreUnmap > 0 {
+			d.ignoreUnmap--
+			return
+		}
+		wm.forgetDialog(ev.Window)
+		_ = xproto.ChangeSaveSetChecked(wm.Conn(), xproto.SetModeDelete, ev.Window).Check()
 		return
 	}
 	c, ok := wm.Clients[ev.Window]
@@ -556,7 +592,7 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case xproto.MapRequestEvent:
 		wm.tryManage(ev.Window)
 	case xproto.ConfigureRequestEvent:
-		//wm.handleConfigure(ev)
+		wm.handleConfigureRequest(ev)
 	case xproto.DestroyNotifyEvent:
 		wm.handleDestroyNotify(ev)
 	case xproto.UnmapNotifyEvent:

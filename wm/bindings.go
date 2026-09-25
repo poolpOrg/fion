@@ -123,6 +123,10 @@ func (wm *Manager) handleBinding(sym xproto.Keysym, shift bool) bool {
 			if sym != XK_f {
 				wm.GetActiveScreen().leaveFullscreen()
 			}
+			// back to the frames, but to close the dialog
+			if sym != XK_d {
+				wm.dialogFocus = 0
+			}
 			if err := b.do(wm); err != nil {
 				log.Printf("key 0x%x: %v", uint32(sym), err)
 			}

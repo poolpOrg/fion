@@ -28,6 +28,12 @@ type confirmPrompt struct {
 // closeQuestion is what Mod+d asks about the active frame, "" when there is
 // nothing to close.
 func (wm *Manager) closeQuestion() string {
+	if d := wm.focusedDialog(); d != 0 {
+		if name := getWindowName(wm.Conn(), d); name != "" {
+			return fmt.Sprintf("Close the dialog %q?", name)
+		}
+		return "Close this dialog?"
+	}
 	frame := wm.GetActiveFrame()
 	if win := frame.GetActiveClient(); win != 0 {
 		name := getWindowName(wm.Conn(), win)
@@ -65,7 +71,12 @@ func (wm *Manager) requestClose() error {
 	if err != nil {
 		return err
 	}
+	dialog := wm.focusedDialog()
 	p.action = func() {
+		if dialog != 0 {
+			wm.closeDialog(dialog)
+			return
+		}
 		if err := wm.closeActive(); err != nil {
 			log.Printf("close: %v", err)
 		}

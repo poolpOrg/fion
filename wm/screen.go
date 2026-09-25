@@ -44,6 +44,11 @@ type atoms struct {
 	WM_PROTOCOLS, WM_DELETE_WINDOW, WM_TAKE_FOCUS, WM_STATE                    xproto.Atom
 	NET_SUPPORTING_WM_CHECK, NET_SUPPORTED, NET_CLIENT_LIST, NET_ACTIVE_WINDOW xproto.Atom
 	NET_WM_NAME, UTF8_STRING, NET_WM_WINDOW_TYPE, NET_WM_WINDOW_TYPE_DOCK      xproto.Atom
+
+	NET_WM_WINDOW_TYPE_DIALOG, NET_WM_WINDOW_TYPE_UTILITY, NET_WM_WINDOW_TYPE_SPLASH        xproto.Atom
+	NET_WM_WINDOW_TYPE_TOOLBAR, NET_WM_WINDOW_TYPE_NOTIFICATION, NET_WM_WINDOW_TYPE_DESKTOP xproto.Atom
+	NET_WM_STATE, NET_WM_STATE_FULLSCREEN, NET_WM_STATE_DEMANDS_ATTENTION                   xproto.Atom
+	NET_WM_PID, NET_CLOSE_WINDOW, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP               xproto.Atom
 }
 
 func (s *Screen) internAtom(name string) xproto.Atom {
@@ -68,6 +73,20 @@ func (s *Screen) getAtoms() atoms {
 		UTF8_STRING:             s.internAtom("UTF8_STRING"),
 		NET_WM_WINDOW_TYPE:      s.internAtom("_NET_WM_WINDOW_TYPE"),
 		NET_WM_WINDOW_TYPE_DOCK: s.internAtom("_NET_WM_WINDOW_TYPE_DOCK"),
+
+		NET_WM_WINDOW_TYPE_DIALOG:       s.internAtom("_NET_WM_WINDOW_TYPE_DIALOG"),
+		NET_WM_WINDOW_TYPE_UTILITY:      s.internAtom("_NET_WM_WINDOW_TYPE_UTILITY"),
+		NET_WM_WINDOW_TYPE_SPLASH:       s.internAtom("_NET_WM_WINDOW_TYPE_SPLASH"),
+		NET_WM_WINDOW_TYPE_TOOLBAR:      s.internAtom("_NET_WM_WINDOW_TYPE_TOOLBAR"),
+		NET_WM_WINDOW_TYPE_NOTIFICATION: s.internAtom("_NET_WM_WINDOW_TYPE_NOTIFICATION"),
+		NET_WM_WINDOW_TYPE_DESKTOP:      s.internAtom("_NET_WM_WINDOW_TYPE_DESKTOP"),
+		NET_WM_STATE:                    s.internAtom("_NET_WM_STATE"),
+		NET_WM_STATE_FULLSCREEN:         s.internAtom("_NET_WM_STATE_FULLSCREEN"),
+		NET_WM_STATE_DEMANDS_ATTENTION:  s.internAtom("_NET_WM_STATE_DEMANDS_ATTENTION"),
+		NET_WM_PID:                      s.internAtom("_NET_WM_PID"),
+		NET_CLOSE_WINDOW:                s.internAtom("_NET_CLOSE_WINDOW"),
+		NET_NUMBER_OF_DESKTOPS:          s.internAtom("_NET_NUMBER_OF_DESKTOPS"),
+		NET_CURRENT_DESKTOP:             s.internAtom("_NET_CURRENT_DESKTOP"),
 	}
 }
 
@@ -225,6 +244,7 @@ func (s *Screen) removeWorkspace() {
 	// the one shown, whose place moved with the removal
 	s.activeWorkspaceIdx = slices.Index(s.Workspaces, new)
 
+	s.wm.moveDialogs(old, new)
 	new.Map()
 	old.Destroy()
 }
