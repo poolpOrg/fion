@@ -2,9 +2,13 @@ package wm
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"slices"
+	"strings"
 
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
 )
 
 const (
@@ -88,21 +92,145 @@ const (
 )
 
 type KeyboardManager struct {
-	wm    *Manager
-	Super uint16 // actual Mod* bit for Super
-	Num   uint16 // NumLock mask
-	Mode  uint16 // Mode_switch (AltGr) mask
+	wm      *Manager
+	Mod     uint16 // modifier for the bindings, Super by default
+	ModName string
+	modSet  bool   // Mod comes from FION_MODIFIER rather than detection
+	Num     uint16 // NumLock mask
+	Mode    uint16 // Mode_switch (AltGr) mask
+
+	// the mappings the grabs were made for, to notice changes that come
+	// without a MappingNotify
+	keysyms []xproto.Keysym
+	modmap  []xproto.Keycode
+}
+
+// modifiers FION_MODIFIER may name
+var modifierMasks = map[string]uint16{
+	"ctrl":    xproto.ModMaskControl,
+	"control": xproto.ModMaskControl,
+	"alt":     xproto.ModMask1,
+	"mod1":    xproto.ModMask1,
+	"mod2":    xproto.ModMask2,
+	"mod3":    xproto.ModMask3,
+	"mod4":    xproto.ModMask4,
+	"mod5":    xproto.ModMask5,
 }
 
 func NewKeyboardManager(wm *Manager) *KeyboardManager {
 	k := &KeyboardManager{wm: wm}
-	k.Super = k.detectSuperMask()
+	k.Mod, k.ModName = k.detectSuperMask(), "Super"
 	k.Num, k.Mode = k.detectModifierMasks()
+
+	// FION_MODIFIER picks another modifier, for when fion runs nested under
+	// a host that keeps Super to itself (or, like XQuartz, has none).
+	if name := os.Getenv("FION_MODIFIER"); name != "" {
+		if mask, ok := modifierMasks[strings.ToLower(name)]; ok {
+			k.Mod, k.ModName, k.modSet = mask, name, true
+		} else {
+			log.Printf("FION_MODIFIER: unknown modifier %q, using Super", name)
+		}
+	}
+	k.keysyms, k.modmap = k.mappings()
 	return k
+}
+
+// mappings fetches the keyboard and modifier mappings.
+func (k *KeyboardManager) mappings() ([]xproto.Keysym, []xproto.Keycode) {
+	setup := xproto.Setup(k.Conn())
+	var keysyms []xproto.Keysym
+	if r, err := xproto.GetKeyboardMapping(k.Conn(), setup.MinKeycode,
+		byte(setup.MaxKeycode-setup.MinKeycode+1)).Reply(); err == nil {
+		keysyms = r.Keysyms
+	}
+	var modmap []xproto.Keycode
+	if r, err := xproto.GetModifierMapping(k.Conn()).Reply(); err == nil {
+		modmap = r.Keycodes
+	}
+	return keysyms, modmap
+}
+
+// CheckMapping redoes the grabs if the keyboard mapping changed without a
+// MappingNotify, and reports whether it did. XKB doesn't send one when the
+// core keyboard switches to a device with another keymap: Xephyr does so
+// between the host's keyboard and XTEST, and so do setups with several
+// keyboards. The grabs, made on keycodes, would then miss the bindings.
+func (k *KeyboardManager) CheckMapping() bool {
+	keysyms, modmap := k.mappings()
+	if keysyms == nil || modmap == nil {
+		return false
+	}
+	if slices.Equal(keysyms, k.keysyms) && slices.Equal(modmap, k.modmap) {
+		return false
+	}
+	k.MappingChanged()
+	return true
 }
 
 func (k *KeyboardManager) Conn() *xgb.Conn {
 	return k.wm.xConn
+}
+
+// grabbed on every root, whatever the window under the pointer: the
+// prefixes, the scratchpad, the launcher, the system panel, the terminal
+// and quit, all with Mod
+var boundKeys = []xproto.Keysym{XK_w, XK_f, XK_t, XK_s, XK_Space, XK_Return, XK_F2, XK_Escape}
+
+// GrabBindings (re)establishes the passive grabs for the bindings on every
+// root. Grabs are held on keycodes, so they must be redone when the keyboard
+// mapping changes.
+func (k *KeyboardManager) GrabBindings() {
+	for _, scr := range k.wm.Screens {
+		root := scr.Info().Root
+		xproto.UngrabKey(k.Conn(), xproto.GrabAny, root, xproto.ModMaskAny)
+		for _, sym := range boundKeys {
+			if err := k.GrabSym(root, sym, k.Mod); err != nil {
+				log.Printf("grab %s+0x%x: %v", k.ModName, uint32(sym), err)
+			}
+		}
+	}
+}
+
+// MappingChanged refreshes what depends on the keyboard mapping.
+func (k *KeyboardManager) MappingChanged() {
+	if !k.modSet {
+		k.Mod = k.detectSuperMask()
+	}
+	k.Num, k.Mode = k.detectModifierMasks()
+	k.keysyms, k.modmap = k.mappings()
+	k.GrabBindings()
+}
+
+// GrabKeyboard takes the whole keyboard, so that the key completing a prefix
+// comes to fion rather than to the client under the pointer.
+func (k *KeyboardManager) GrabKeyboard(root xproto.Window) error {
+	r, err := xproto.GrabKeyboard(k.Conn(), false, root, xproto.TimeCurrentTime,
+		xproto.GrabModeAsync, xproto.GrabModeAsync).Reply()
+	if err != nil {
+		return err
+	}
+	if r.Status != xproto.GrabStatusSuccess {
+		return fmt.Errorf("status %d", r.Status)
+	}
+	return nil
+}
+
+func (k *KeyboardManager) UngrabKeyboard() {
+	xproto.UngrabKeyboard(k.Conn(), xproto.TimeCurrentTime)
+}
+
+// isModifierKey reports whether sym is a modifier key (Shift, Control,
+// Alt, Super, ...) rather than a key that completes a binding.
+func isModifierKey(sym xproto.Keysym) bool {
+	switch {
+	case sym >= 0xFFE1 && sym <= 0xFFEE: // Shift_L .. Hyper_R
+		return true
+	case sym == 0xFF7E, sym == 0xFF7F: // Mode_switch, Num_Lock
+		return true
+	case sym >= 0xFE01 && sym <= 0xFE13: // ISO_Lock .. ISO_Level5_Lock
+		return true
+	}
+	return false
 }
 
 /* ---------------- core: portable grabs ---------------- */
@@ -230,7 +358,7 @@ func (k *KeyboardManager) levelsFor(sym xproto.Keysym) (needShift, needMode bool
 /* --------------- modifier detection (strict minimum) --------------- */
 
 func (k *KeyboardManager) detectSuperMask() uint16 {
-	const XK_Super_L, XK_Super_R = 0xFFE3, 0xFFE4
+	const XK_Super_L, XK_Super_R = 0xFFEB, 0xFFEC
 	mm, err := xproto.GetModifierMapping(k.Conn()).Reply()
 	if err != nil || mm == nil {
 		return xproto.ModMask4

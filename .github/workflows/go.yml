@@ -1,0 +1,37 @@
+name: Go
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+
+    - name: Install Xvfb
+      run: sudo apt-get update && sudo apt-get install -y xvfb
+
+    - name: gofmt
+      run: test -z "$(gofmt -l . | tee /dev/stderr)"
+
+    - name: vet
+      run: go vet ./...
+
+    - name: build
+      run: go build ./...
+
+    # the frame tree tests need an X server fion can manage
+    - name: test
+      run: |
+        Xvfb :99 -screen 0 1280x800x24 -noreset &
+        for i in $(seq 50); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+        FION_TEST_DISPLAY=:99 go test -race -v ./...

@@ -1,8 +1,8 @@
 package wm
 
 import (
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
 )
 
 func getWindowName(c *xgb.Conn, w xproto.Window) string {

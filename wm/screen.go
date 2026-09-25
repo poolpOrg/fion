@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
 )
 
 type Screen struct {
@@ -17,6 +17,20 @@ type Screen struct {
 	Workspaces []*Workspace
 
 	activeWorkspaceIdx int
+
+	scratchpad      *Frame // created the first time it is shown
+	scratchpadShown bool
+
+	// the root's children when fion took over, to adopt at startup
+	existing []xproto.Window
+
+	// the logo, by size and colors, and the operating system's icon
+	logos       map[logoKey]logoImage
+	osIconImage logoImage
+	logoGC      xproto.Gcontext
+
+	// the expanded info bar, created the first time it is shown
+	panel *sysPanel
 }
 
 type atoms struct {
@@ -70,7 +84,12 @@ func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 		return nil, fmt.Errorf("another WM running: %w", err)
 	}
 
-	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{screenInfo.BlackPixel})
+	// before creating any window of our own
+	if tree, err := xproto.QueryTree(wm.Conn(), screenInfo.Root).Reply(); err == nil {
+		screen.existing = tree.Children
+	}
+
+	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{colorBackground})
 	xproto.ClearArea(wm.Conn(), false, screenInfo.Root, 0, 0, screenInfo.WidthInPixels, screenInfo.HeightInPixels)
 
 	if err := screen.initEWMH(); err != nil {
@@ -131,6 +150,16 @@ func (s *Screen) setPropAtoms(win xproto.Window, prop xproto.Atom, atoms []xprot
 		binary.LittleEndian.PutUint32(buf[i*4:(i+1)*4], uint32(a))
 	}
 	xproto.ChangeProperty(s.Conn(), xproto.PropModeReplace, win, prop, xproto.AtomAtom, 32, uint32(len(atoms)), buf)
+}
+
+// updateTitleBars redraws the title bars of every frame on the screen.
+func (s *Screen) updateTitleBars() {
+	for _, ws := range s.Workspaces {
+		ws.updateTitleBars()
+	}
+	if s.scratchpad != nil {
+		s.scratchpad.updateTitleBar()
+	}
 }
 
 func (s *Screen) GetActiveWorkspace() *Workspace {

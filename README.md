@@ -1,52 +1,134 @@
 # fion
 
-![](fion.jpg)
+![](assets/fion.jpg)
 
-repository for the fion window manager
+fion is a static tiling window manager for X11, inspired by
+[ion](https://tuomov.iki.fi/software/ion/), written in Go on top of
+[xgb](https://github.com/jezek/xgb).
 
-**THIS IS A WORK IN PROGRESS, IT IS NOT WORKING YET !**
-
-
-
-![fion](https://poolp.org/posts/2019-08-25/august-2019-report-fion-plakar-and-opensmtpd/cover.jpg)
-
-description
---
-fion is a static tiling window manager inspired by ion.
+**This is a work in progress: it runs, but it is not usable as a daily
+window manager yet.**
 
 
 design
 --
-Fion assigns one or many workspaces to a screen and will always display an active workspace at a given time.
-A workspace will always contain at least one tile filling it up entirely.
-Tiles may be split horizontally or vertically.
+Each X screen holds one or more workspaces, and always shows one of them.
+A workspace is a tree of frames: it starts as a single frame filling it,
+and any frame can be split in two, stacked or side by side.
+Leaf frames hold X clients as tabs: the frame's title bar has one tab per
+client, and only the active one is shown.
+
+Each screen also has a scratchpad, as in ion: a frame floating centered
+above the workspaces, that `Super+space` shows and hides.  It stays shown
+when switching workspaces.  While it is shown, it is the active frame: new
+windows open in it, the tab bindings act on it and it has the keyboard
+focus.  It can't be split or removed.  To fill it, show it and start
+windows, `Super+F2` for a terminal, or drag tabs onto it.
+
+A bar at the bottom of each workspace shows the fion logo, the screen and
+workspace numbers, the operating system with a small icon of its own, as
+`OpenBSD/7.9 (arm64)`, CPU and memory usage, the load average and the
+time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
+the load average above the number of CPUs.  Clicking the bar, or
+`Super+s`, expands it into a panel with the machine's hardware, the use
+and temperature of each CPU, the GPUs, the memory, and the disk and
+network throughput, refreshed every second.
+
+Empty frames are black; a workspace that is a single empty frame shows the
+fion logo, centered.
+
+fion uses the [Dracula](https://draculatheme.com) colors, and adds them for
+xterm to the display's resource database when it starts, along with UTF-8
+whatever the locale, unless your own resources already set them.
 
 
-currently implemented
+building
 --
-- detects and configures multiple screens
-- assigns a default workspace and default tile to each screen
-- as many workspaces as wanted on each screen
-- as many tiles as wanted on each workspace
-- keyboard shortcuts to create / destroy / switch between next and previous workspace
-- keyboard shortcuts to split horizontally & vertically / destroy / switch between next and previous tile
-- keyboard shortcut to run terminal
-- notion of current workspace and current tile on each screen
-- attaches X client to the proper place
-- focus is given to a tile either through keyboard shortcuts or by moving cursor
-- event loop implements a tick to update layout even in the lack of events
+fion needs Go 1.25 or later:
+
+    $ go install github.com/poolpOrg/fion@latest
+
+or, from a clone:
+
+    $ go build
 
 
-missing
+key bindings
 --
-- window management should work when focus is on a terminal, hijacking key strokes
-- tiles management is not finished: creating / splitting / iterating works fine but destroying breaks the layout
-- framing inside tiles so that it is possible to iterate between X clients attached to the same tile
-- splitting tiles halves the parent tile, support for resizing should be implemented
-- a cross workspace tile should be implemented, similar to ion's alt-space tile
+Bindings use a prefix: press `Super+w` or `Super+f`, release, then press the
+action key without any modifier.
+
+| keys                 | action                                              |
+|----------------------|-----------------------------------------------------|
+| `Super+w` `c`        | create a workspace                                  |
+| `Super+w` `n` / `p`  | next / previous workspace                           |
+| `Super+w` `h`        | split the active frame top / bottom                 |
+| `Super+w` `v`        | split the active frame left / right                 |
+| `Super+w` `d`        | ask the active window to close, and force it when pressed again or when the window can't be asked; in an empty frame, remove the frame; in the last empty frame, remove the workspace |
+| `Super+f` `n` / `p`  | next / previous frame                               |
+| `Super+t` `n` / `p`  | next / previous tab in the active frame             |
+| `Super+space`        | show / hide the scratchpad                          |
+| `Super+s`            | show / hide the system panel, as clicking the bar does |
+| `Super+Return`       | open the launcher                                   |
+| `Super+F2`           | start an xterm, in the active frame                 |
+| `F2`                 | start an xterm, when the pointer is not over a window |
+| `Super+Escape`       | quit fion                                           |
+
+Clicking a tab selects it and its frame.  Dragging a tab moves its window
+to the frame it is dropped on, the scratchpad included, or to another place
+in its own title bar.
+
+The launcher finds, as you type, the commands in `$PATH`, the desktop
+applications and the command lines you ran before, which come first.
+Matching is fuzzy: `ffx` finds `firefox`.  `Up` / `Down` (or `Ctrl+p` /
+`Ctrl+n`) move the selection, `Tab` copies it to the input line to add
+arguments, `Return` runs the selection, or the line as typed when it has
+arguments, through `sh -c`, and `Escape` closes the launcher.  Programs
+that don't open windows, such as `ls` or `btop`, run in an xterm that stays
+open once they exit, until `Return`: fion tells them from the libraries
+they are linked to, and desktop applications from their entries.  The history
+is kept in `$XDG_STATE_HOME/fion/history`, `~/.local/state/fion/history` by
+default.
+
+Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
+modifier than Super.
 
 
-obligatory screenshots
+running it nested
 --
-![1](https://poolp.org/images/2019-06-30-fion_1.png)
-![2](https://poolp.org/images/2019-06-30-fion_2.png)
+The easiest way to try fion is inside Xephyr:
+
+    $ Xephyr :1 -screen 1280x800 &
+    $ DISPLAY=:1 ./fion &
+    $ DISPLAY=:1 xterm &
+
+On macOS, with XQuartz, Xephyr can't create its socket in `/tmp/.X11-unix`
+without root, and XQuartz has no Super key, so listen on TCP and use Ctrl:
+
+    $ Xephyr :1 -screen 1280x800 -nolisten unix -nolisten local -listen tcp -ac &
+    $ DISPLAY=127.0.0.1:1 FION_MODIFIER=ctrl ./fion
+
+
+tests
+--
+The frame tree tests need an X server fion can manage, such as Xvfb, named
+by `FION_TEST_DISPLAY`; they are skipped otherwise:
+
+    $ Xvfb :99 -noreset &
+    $ FION_TEST_DISPLAY=:99 go test ./wm
+
+
+known limitations
+--
+- input focus is only given to the scratchpad; elsewhere it follows the
+  pointer
+- windows can only be moved between frames with the mouse
+- splitting halves a frame, frames can't be resized
+- every window gets a tab, dialogs and transient windows included
+- ConfigureRequest events are ignored
+- only the X screens are handled, not RandR outputs: on a multi-monitor
+  setup a workspace spans all the monitors
+- after removing a workspace, the one marked active may not be the one
+  shown
+- tab titles are read from `WM_NAME` only, UTF-8 titles show empty
+- EWMH support is limited to announcing the window manager
