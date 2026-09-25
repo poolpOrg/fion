@@ -430,9 +430,7 @@ func (f *Frame) selectClient(i int) {
 	f.activeClient = i
 	f.showActiveClient()
 	f.updateTitleBar()
-	if f.floating() {
-		f.wm().updateFocus()
-	}
+	f.wm().updateFocus()
 }
 
 // showActiveClient maps the active tab and unmaps the others.

@@ -66,17 +66,3 @@ func (s *Screen) raiseScratchpad() {
 	xproto.ConfigureWindow(s.Conn(), s.scratchpad.window, xproto.ConfigWindowStackMode,
 		[]uint32{xproto.StackModeAbove})
 }
-
-// updateFocus gives the input focus to the scratchpad's active client while
-// it is shown, and lets it follow the pointer otherwise.
-func (wm *Manager) updateFocus() {
-	focus := xproto.Window(xproto.InputFocusPointerRoot)
-	if s := wm.GetActiveScreen(); s != nil && s.fullscreen.client != 0 {
-		focus = s.fullscreen.client
-	} else if s != nil && s.scratchpadShown {
-		if c := s.scratchpad.GetActiveClient(); c != 0 {
-			focus = c
-		}
-	}
-	xproto.SetInputFocus(wm.Conn(), xproto.InputFocusPointerRoot, focus, xproto.TimeCurrentTime)
-}

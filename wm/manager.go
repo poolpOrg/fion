@@ -33,6 +33,12 @@ type Manager struct {
 	// the root's children when fion took over, to adopt at startup
 	existing []xproto.Window
 
+	// the window taking the keys when no client has the focus, and the
+	// client last told to EWMH as having it
+	noFocus         xproto.Window
+	activeWindow    xproto.Window
+	activeWindowSet bool
+
 	NumLock uint16
 
 	// Clients by window id
@@ -171,8 +177,10 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		c.ignoreUnmap++
 	}
 	wm.Clients[win] = c
+	wm.grabClicks(win)
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
+	wm.updateFocus()
 
 	// Attach to active Leaf as a new tab
 	//wm.updateClientList()
@@ -191,9 +199,7 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	c.frame.RemoveClient(win)
 	c.frame.showActiveClient()
 	c.frame.updateTitleBar()
-	if c.frame.floating() {
-		wm.updateFocus()
-	}
+	wm.updateFocus()
 	return c
 }
 
@@ -303,6 +309,9 @@ func (wm *Manager) initScreens() error {
 		return err
 	}
 	wm.existing = existing
+	if err := wm.newNoFocusWindow(info); err != nil {
+		return err
+	}
 	ms := queryMonitors(wm.Conn(), wm.hasRandr, info.Root, info.WidthInPixels, info.HeightInPixels)
 	// sized for the primary monitor
 	h := ms[0].g.H
@@ -565,6 +574,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			}
 		}
 	case xproto.ButtonPressEvent:
+		// a click in a client, grabbed to focus it
+		if ev.Event != ev.Root && wm.clientClicked(ev) {
+			break
+		}
 		if wm.cheatSheetShown() {
 			wm.hideCheatSheet()
 			break
@@ -665,6 +678,7 @@ func (wm *Manager) clickTitleBar(f *Frame, x int16) {
 		f.selectClient(i)
 	}
 	f.screen.updateTitleBars()
+	wm.updateFocus()
 }
 
 // closeActive asks the active client to close, then kills it when asked

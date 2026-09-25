@@ -126,6 +126,8 @@ func (wm *Manager) handleBinding(sym xproto.Keysym, shift bool) bool {
 			if err := b.do(wm); err != nil {
 				log.Printf("key 0x%x: %v", uint32(sym), err)
 			}
+			// whatever the binding made active
+			wm.updateFocus()
 			break
 		}
 	}
