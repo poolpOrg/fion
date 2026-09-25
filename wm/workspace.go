@@ -106,14 +106,14 @@ func (ws *Workspace) setupInfoBar() error {
 			colorBar,  // background, of the text drawn by ImageText8
 		},
 	)
-	if fid, ok := openFont(ws.Conn(), font.plain); ok {
+	if fid, ok := openFont(ws.Conn(), barFont.plain); ok {
 		xproto.ChangeGC(ws.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
 		xproto.CloseFont(ws.Conn(), fid)
 	}
 	ws.InfoBarGC = gc
 
 	// the same font in bold, for values past their threshold
-	if bid, ok := openFont(ws.Conn(), font.bold); ok {
+	if bid, ok := openFont(ws.Conn(), barFont.bold); ok {
 		agc, _ := xproto.NewGcontextId(ws.Conn())
 		xproto.CreateGC(ws.Conn(), agc, xproto.Drawable(ws.InfoBarWindow),
 			xproto.GcForeground|xproto.GcBackground|xproto.GcFont,
@@ -221,8 +221,13 @@ func (ws *Workspace) position() (screen, workspace, count int) {
 	return screen, workspace, len(ws.Screen.Workspaces)
 }
 
+// barBaseline is where the bar's text sits.
+func barBaseline() int {
+	return (infoBarInnerH()-barFont.ascent-barFont.descent)/2 + barFont.ascent
+}
+
 // the info bar's height, inside its border, and with it
-func infoBarInnerH() int { return textH() + 5 }
+func infoBarInnerH() int { return barFont.ascent + barFont.descent + 7 }
 func infoBarOuterH() int { return infoBarInnerH() + 2 }
 
 // barAlerts tells which of the CPU, memory and load values are past their
@@ -287,14 +292,14 @@ func (ws *Workspace) updateInfoBar() {
 			} else {
 				// no bold font: red, drawn twice for weight
 				xproto.ChangeGC(conn, ws.InfoBarGC, xproto.GcForeground, []uint32{colorAlert})
-				xproto.PolyText8(conn, bar, gc, int16(x+1), int16(baseline(infoBarInnerH())), append([]byte{byte(len(s)), 0}, s...))
+				xproto.PolyText8(conn, bar, gc, int16(x+1), int16(barBaseline()), append([]byte{byte(len(s)), 0}, s...))
 			}
 		}
-		xproto.ImageText8(conn, byte(len(s)), bar, gc, int16(x), int16(baseline(infoBarInnerH())), s)
+		xproto.ImageText8(conn, byte(len(s)), bar, gc, int16(x), int16(barBaseline()), s)
 		if t.alert && ws.infoBarAlertGC == 0 {
 			xproto.ChangeGC(conn, ws.InfoBarGC, xproto.GcForeground, []uint32{colorText})
 		}
-		return x + len(s)*charW()
+		return x + len(s)*barFont.charW
 	}
 	image := func(x int, img logoImage) int {
 		xproto.CopyArea(conn, xproto.Drawable(img.pixmap), bar, ws.Screen.logoGC,
@@ -323,7 +328,7 @@ func (ws *Workspace) updateInfoBar() {
 		x = text(x, barText{s: " | "})
 		text(x, barText{s: formatBattery(b), alert: batteryAlert(b)})
 	}
-	text(int(ws.Screen.Geometry().W)-(len(clock)+1)*charW(), barText{s: clock})
+	text(int(ws.Screen.Geometry().W)-(len(clock)+1)*barFont.charW, barText{s: clock})
 }
 
 func (ws *Workspace) updateTitleBars() {
