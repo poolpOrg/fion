@@ -24,9 +24,10 @@ type Screen struct {
 	// the root's children when fion took over, to adopt at startup
 	existing []xproto.Window
 
-	// the logo empty frames show, by width
-	logos  map[int]logoImage
-	logoGC xproto.Gcontext
+	// the logo, by size and colors, and the operating system's icon
+	logos       map[logoKey]logoImage
+	osIconImage logoImage
+	logoGC      xproto.Gcontext
 }
 
 type atoms struct {

@@ -25,8 +25,9 @@ windows open in it, the tab bindings act on it and it has the keyboard
 focus.  It can't be split or removed.  To fill it, show it and start
 windows, `Super+F2` for a terminal, or drag tabs onto it.
 
-A bar at the bottom of each workspace shows the screen and workspace
-numbers, CPU and memory usage and the time.
+A bar at the bottom of each workspace shows the fion logo, the screen and
+workspace numbers, the operating system with a small icon of its own, as
+`OpenBSD/7.9 (arm64)`, CPU and memory usage and the time.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered.

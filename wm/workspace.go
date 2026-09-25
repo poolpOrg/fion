@@ -210,6 +210,11 @@ func (ws *Workspace) position() (screen, workspace, count int) {
 	return screen, workspace, len(ws.Screen.Workspaces)
 }
 
+const (
+	infoBarH     = 18 // inside its border
+	infoBarLogoH = 14
+)
+
 func (ws *Workspace) updateInfoBar() {
 	clock := time.Now().Format(time.RFC1123)
 
@@ -232,12 +237,38 @@ func (ws *Workspace) updateInfoBar() {
 			memPercents.UsedPercent))
 	}
 
-	screen, workspace, count := ws.position()
-	infotext := fmt.Sprintf("FION | [%02x:%02x/%02x] | ", screen, workspace, count) + strings.Join(ressources, " | ")
-	xproto.ClearArea(ws.Manager.Conn(), false, ws.InfoBarWindow, 0, 0, 0, 0)
-	xproto.ImageText8(ws.Manager.Conn(), byte(len(infotext)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, 5, 14, infotext)
-	xproto.ImageText8(ws.Manager.Conn(), byte(len(clock)), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC, int16(ws.Screen.Geometry().W)-190, 14, clock)
+	conn, bar := ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow)
+	xproto.ClearArea(conn, false, ws.InfoBarWindow, 0, 0, 0, 0)
+	text := func(x int, s string) int {
+		if len(s) > 255 {
+			s = s[:255]
+		}
+		xproto.ImageText8(conn, byte(len(s)), bar, ws.InfoBarGC, int16(x), 14, s)
+		return x + len(s)*fixedCharWidth
+	}
+	image := func(x int, img logoImage) int {
+		xproto.CopyArea(conn, xproto.Drawable(img.pixmap), bar, ws.Screen.logoGC,
+			0, 0, int16(x), int16((infoBarH-img.h)/2), uint16(img.w), uint16(img.h))
+		return x + img.w
+	}
 
+	// the logo, small, then where we are, then the operating system
+	x := 4
+	if m := loadLogo(); m != nil && m.h > 0 {
+		if img, ok := ws.Screen.logoPixmap(m.w*infoBarLogoH/m.h, colorBar, colorText); ok {
+			x = image(x, img) + fixedCharWidth
+		}
+	} else {
+		x = text(x, "FION ")
+	}
+	screen, workspace, count := ws.position()
+	x = text(x, fmt.Sprintf("[%02x:%02x/%02x] | ", screen, workspace, count))
+	system := thisOS()
+	if img, ok := ws.Screen.iconPixmap(system.kind, colorBar); ok {
+		x = image(x, img) + 4
+	}
+	text(x, system.String()+" | "+strings.Join(ressources, " | "))
+	text(int(ws.Screen.Geometry().W)-190, clock)
 }
 
 func (ws *Workspace) updateTitleBars() {

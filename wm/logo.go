@@ -107,18 +107,10 @@ type logoImage struct {
 	w, h   int
 }
 
-// logoPixmap returns the logo rendered at width w, made once per width.
-// It reports false when the screen isn't the 24-bit TrueColor fion draws
-// for.
-func (s *Screen) logoPixmap(w int) (logoImage, bool) {
-	if img, ok := s.logos[w]; ok {
-		return img, true
-	}
-	m := loadLogo()
+// pixmapOf makes a pixmap of w×h pixels, their colors given by pixel. It
+// reports false when the screen isn't the 24-bit TrueColor fion draws for.
+func (s *Screen) pixmapOf(w, h int, pixel func(x, y int) uint32) (xproto.Pixmap, bool) {
 	scr := s.Info()
-	if m == nil || m.w == 0 || scr.RootDepth != 24 {
-		return logoImage{}, false
-	}
 	setup := s.wm.Setup
 	bpp := 0
 	for _, f := range setup.PixmapFormats {
@@ -126,51 +118,93 @@ func (s *Screen) logoPixmap(w int) (logoImage, bool) {
 			bpp = int(f.BitsPerPixel)
 		}
 	}
-	if bpp != 32 {
-		return logoImage{}, false
+	if scr.RootDepth != 24 || bpp != 32 || w <= 0 || h <= 0 {
+		return 0, false
 	}
 
-	sm := m.scaled(w)
 	conn := s.Conn()
 	pm, err := xproto.NewPixmapId(conn)
 	if err != nil {
-		return logoImage{}, false
+		return 0, false
 	}
-	xproto.CreatePixmap(conn, 24, pm, xproto.Drawable(scr.Root), uint16(sm.w), uint16(sm.h))
+	xproto.CreatePixmap(conn, 24, pm, xproto.Drawable(scr.Root), uint16(w), uint16(h))
 	if s.logoGC == 0 {
 		gc, err := xproto.NewGcontextId(conn)
 		if err != nil {
-			return logoImage{}, false
+			return 0, false
 		}
 		xproto.CreateGC(conn, gc, xproto.Drawable(scr.Root), xproto.GcGraphicsExposures, []uint32{0})
 		s.logoGC = gc
 	}
 
 	// in bands of rows that fit in a request
-	rowBytes := sm.w * 4
+	rowBytes := w * 4
 	rows := max(1, (int(setup.MaximumRequestLength)*4-32)/rowBytes)
-	for y0 := 0; y0 < sm.h; y0 += rows {
-		n := min(rows, sm.h-y0)
+	for y0 := 0; y0 < h; y0 += rows {
+		n := min(rows, h-y0)
 		data := make([]byte, 0, n*rowBytes)
-		for _, a := range sm.alpha[y0*sm.w : (y0+n)*sm.w] {
-			c := blend(colorEmpty, colorLogo, a)
-			r, g, b := byte(c>>16), byte(c>>8), byte(c)
-			if setup.ImageByteOrder == xproto.ImageOrderLSBFirst {
-				data = append(data, b, g, r, 0)
-			} else {
-				data = append(data, 0, r, g, b)
+		for y := y0; y < y0+n; y++ {
+			for x := range w {
+				c := pixel(x, y)
+				r, g, b := byte(c>>16), byte(c>>8), byte(c)
+				if setup.ImageByteOrder == xproto.ImageOrderLSBFirst {
+					data = append(data, b, g, r, 0)
+				} else {
+					data = append(data, 0, r, g, b)
+				}
 			}
 		}
 		xproto.PutImage(conn, xproto.ImageFormatZPixmap, xproto.Drawable(pm), s.logoGC,
-			uint16(sm.w), uint16(n), 0, int16(y0), 0, 24, data)
+			uint16(w), uint16(n), 0, int16(y0), 0, 24, data)
 	}
+	return pm, true
+}
 
+type logoKey struct {
+	w      int
+	bg, fg uint32
+}
+
+// logoPixmap returns the logo rendered at width w in fg over bg, made once
+// for each.
+func (s *Screen) logoPixmap(w int, bg, fg uint32) (logoImage, bool) {
+	key := logoKey{w, bg, fg}
+	if img, ok := s.logos[key]; ok {
+		return img, true
+	}
+	m := loadLogo()
+	if m == nil || m.w == 0 {
+		return logoImage{}, false
+	}
+	sm := m.scaled(w)
+	// scaled way down, thin strokes average to grey: strengthen them
+	boost := max(1, 4*m.w/(sm.w*10))
+	pm, ok := s.pixmapOf(sm.w, sm.h, func(x, y int) uint32 {
+		return blend(bg, fg, uint8(min(255, int(sm.alpha[y*sm.w+x])*boost)))
+	})
+	if !ok {
+		return logoImage{}, false
+	}
 	img := logoImage{pixmap: pm, w: sm.w, h: sm.h}
 	if s.logos == nil {
-		s.logos = map[int]logoImage{}
+		s.logos = map[logoKey]logoImage{}
 	}
-	s.logos[w] = img
+	s.logos[key] = img
 	return img, true
+}
+
+// iconPixmap returns the operating system's icon over bg, made once.
+func (s *Screen) iconPixmap(kind string, bg uint32) (logoImage, bool) {
+	if s.osIconImage.pixmap != 0 {
+		return s.osIconImage, true
+	}
+	ic := osIcon(kind)
+	pm, ok := s.pixmapOf(ic.w, ic.h, func(x, y int) uint32 { return ic.pixel(x, y, bg) })
+	if !ok {
+		return logoImage{}, false
+	}
+	s.osIconImage = logoImage{pixmap: pm, w: ic.w, h: ic.h}
+	return s.osIconImage, true
 }
 
 // drawLogo draws the logo centered in f when it is the whole of its
@@ -191,7 +225,7 @@ func (f *Frame) drawLogo() {
 	if w < 32 {
 		return
 	}
-	img, ok := f.screen.logoPixmap(w)
+	img, ok := f.screen.logoPixmap(w, colorEmpty, colorLogo)
 	if !ok {
 		return
 	}
