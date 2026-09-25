@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jezek/xgb"
@@ -105,6 +106,38 @@ func cleanMonitors(ms []monitor) []monitor {
 		return out[i].g.Y < out[j].g.Y
 	})
 	return out
+}
+
+// randrOnce registers RandR's events with xgb, for the whole process.
+var (
+	randrOnce sync.Once
+	randrErr  error
+)
+
+// initRandr readies conn for RandR's requests. randr.Init also registers
+// the extension's events in a table of xgb's shared by all connections,
+// which their readers look up without a lock: that is done once, the
+// connections after the first only told the extension's opcode.
+func initRandr(conn *xgb.Conn) error {
+	first := false
+	randrOnce.Do(func() {
+		first = true
+		randrErr = randr.Init(conn)
+	})
+	if first || randrErr != nil {
+		return randrErr
+	}
+	reply, err := xproto.QueryExtension(conn, 5, "RANDR").Reply()
+	if err != nil {
+		return err
+	}
+	if !reply.Present {
+		return fmt.Errorf("no RANDR extension")
+	}
+	conn.ExtLock.Lock()
+	conn.Extensions["RANDR"] = reply.MajorOpcode
+	conn.ExtLock.Unlock()
+	return nil
 }
 
 // watchMonitors asks RandR to tell when monitors change.

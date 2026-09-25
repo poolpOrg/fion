@@ -101,7 +101,7 @@ func NewManager() (*Manager, error) {
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
 	// the version fion speaks, for the server to send monitor changes
-	if randr.Init(conn) == nil {
+	if initRandr(conn) == nil {
 		_, err := randr.QueryVersion(conn, 1, 5).Reply()
 		wm.hasRandr = err == nil
 	}
