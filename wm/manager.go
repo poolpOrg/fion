@@ -465,18 +465,16 @@ func (wm *Manager) pumpEvents(done <-chan struct{}) <-chan xEvent {
 
 // spawn starts a program and reaps it when it exits.
 func (wm *Manager) spawn(name string, args ...string) {
-	cmd := exec.Command(name, args...)
+	wm.start(exec.Command(name, args...))
+}
+
+// start starts cmd and reaps it when it exits.
+func (wm *Manager) start(cmd *exec.Cmd) {
 	if err := cmd.Start(); err != nil {
-		log.Printf("spawn %s: %v", name, err)
+		log.Printf("spawn %s: %v", cmd.Path, err)
 		return
 	}
 	go cmd.Wait()
-}
-
-// spawnTerminal starts an xterm, which opens in the active frame, in the
-// colors installXtermTheme set up.
-func (wm *Manager) spawnTerminal() {
-	wm.spawn("xterm")
 }
 
 // Run is the event loop. All state changes and all drawing happen on this
