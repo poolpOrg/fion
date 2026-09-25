@@ -45,20 +45,24 @@ type sysPanel struct {
 
 var panelViews = []string{"Summary", "CPU", "Memory", "Disk", "Network", "Sensors"}
 
-// panelHeight is the panel's height on a screen of height screenH, for a
-// machine with cores CPUs: all of them in a column, but at most 60% of
-// the screen.
-func panelHeight(screenH, cores int) int {
-	rows := max(cores+8, 24)
-	return min(screenH*6/10, rows*panelLineH()+2*panelPad)
+// the panel's height in lines, at least what the graphs need, at most
+// half the screen
+const panelMinLines = 12
+
+func panelMaxLines(screenH int) int {
+	return max(panelMinLines, (screenH/2-panelChromeH())/panelLineH())
 }
+
+// panelChromeH is the panel's height but for its lines: the views' names
+// and the space around them.
+func panelChromeH() int { return panelPad/2 + panelLineH() + panelPad/2 + panelPad/2 }
 
 func newSysPanel(s *Screen) (*sysPanel, error) {
 	conn := s.Conn()
 	g := s.Geometry()
 	p := &sysPanel{screen: s, hist: histories{}}
 	p.snap = p.sampler.sample()
-	p.h = panelHeight(int(g.H), len(p.snap.cpus))
+	p.h = p.fitHeight()
 
 	w, err := xproto.NewWindowId(conn)
 	if err != nil {
@@ -102,6 +106,7 @@ func (s *Screen) togglePanel() error {
 	if p.shown {
 		p.shown = false
 		xproto.UnmapWindow(s.Conn(), p.window)
+		s.layoutWorkspaces()
 		s.wm.KeyboardManager.UngrabKeyboard()
 		return nil
 	}
@@ -112,6 +117,12 @@ func (s *Screen) togglePanel() error {
 	p.shown = true
 	p.snap = p.sampler.sample()
 	p.hist.record(p.snap)
+	// as high as the summary needs, the frames above it
+	p.h = p.fitHeight()
+	g := s.Geometry()
+	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowY|xproto.ConfigWindowHeight,
+		[]uint32{uint32(int(g.H) - infoBarOuterH() - p.h), uint32(p.h)})
+	s.layoutWorkspaces()
 	xproto.MapWindow(s.Conn(), p.window)
 	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowStackMode, []uint32{xproto.StackModeAbove})
 	p.draw()
@@ -344,29 +355,69 @@ func (p *sysPanel) label(x, y int, s string, fg uint32) {
 }
 
 // ioLine shows a disk's or an interface's throughput, idle ones dimmed.
-func ioLine(c *column, name string, rs []ioRate, in, out string) {
+func ioLine(c rowWriter, name string, rs []ioRate, in, out string) {
 	r, ok := rateOf(rs, name)
+	// as wide whatever it shows, the summary laid out for the widest
+	busy := func(a, b string) string { return fmt.Sprintf("%-8s %s %-12s %s %-12s", name, in, a, out, b) }
+	n := len(busy("", ""))
 	switch {
 	case !ok:
-		c.line(fmt.Sprintf("%-8s measuring...", name), colorDim)
+		c.line(fmt.Sprintf("%-*s", n, fmt.Sprintf("%-8s measuring...", name)), colorDim)
 	case r.in+r.out == 0:
-		c.line(fmt.Sprintf("%-8s idle", name), colorDim)
+		c.line(fmt.Sprintf("%-*s", n, fmt.Sprintf("%-8s idle", name)), colorDim)
 	default:
-		c.line(fmt.Sprintf("%-8s %s %-12s %s %s", name, in, formatRate(r.in), out, formatRate(r.out)), colorText)
+		c.line(busy(formatRate(r.in), formatRate(r.out)), colorText)
 	}
 }
 
-func (p *sysPanel) drawSummary(a rect) {
-	colW := (a.w - 2*panelPad) / 3
-	col := func(i int) *column {
-		return &column{p: p, x: a.x + i*(colW+panelPad), y: a.y, w: colW, bottom: a.y + a.h}
-	}
-	s := p.snap
+// A summary row: a line of text or a meter, a section's header, or the
+// space between sections.
+type summaryRow struct {
+	kind int
+	w    int // in pixels
+	draw func(c *column)
+}
 
-	// hardware, memory, filesystems
-	c := col(0)
+const (
+	rowLine = iota
+	rowHeader
+	rowGap
+)
+
+// rowCollector gathers the summary's rows, the column's methods measuring
+// them instead of drawing.
+type rowCollector struct{ rows []summaryRow }
+
+func (r *rowCollector) header(s string) {
+	if len(r.rows) > 0 {
+		r.rows = append(r.rows, summaryRow{kind: rowGap})
+	}
+	r.rows = append(r.rows, summaryRow{kind: rowHeader, w: len(s) * charW(), draw: func(c *column) { c.header(s) }})
+}
+
+func (r *rowCollector) line(s string, fg uint32) {
+	r.rows = append(r.rows, summaryRow{w: len(s) * charW(), draw: func(c *column) { c.line(s, fg) }})
+}
+
+func meterRowW(label, after string) int {
+	return (len(label)+2+len(after))*charW() + panelMeterW()
+}
+
+func (r *rowCollector) meter(label string, pct float64, after string) {
+	r.rows = append(r.rows, summaryRow{w: meterRowW(label, after), draw: func(c *column) { c.meter(label, pct, after) }})
+}
+
+func (r *rowCollector) coloredMeter(label string, pct float64, after string, color uint32) {
+	r.rows = append(r.rows, summaryRow{w: meterRowW(label, after),
+		draw: func(c *column) { c.coloredMeter(label, pct, after, color) }})
+}
+
+// summaryRows are the summary's sections, row by row.
+func (p *sysPanel) summaryRows() []summaryRow {
+	r := &rowCollector{}
+	s := p.snap
 	h := s.host
-	c.header("HARDWARE")
+	r.header("HARDWARE")
 	for _, kv := range [][2]string{
 		{"host", h.hostname},
 		{"machine", h.model},
@@ -377,69 +428,156 @@ func (p *sysPanel) drawSummary(a rect) {
 		{"uptime", formatUptime(time.Since(h.boot))},
 	} {
 		if kv[1] != "" && !strings.HasPrefix(kv[1], ", ") {
-			c.line(fmt.Sprintf("%-8s %s", kv[0], kv[1]), colorText)
+			r.line(fmt.Sprintf("%-8s %s", kv[0], kv[1]), colorText)
 		}
 	}
-	c.gap()
-	c.header("MEMORY")
-	p.memoryMeters(c)
-	c.gap()
-	c.header("FILESYSTEMS")
-	p.filesystemMeters(c, 9)
+	r.header("MEMORY")
+	p.memoryMeters(r)
+	r.header("FILESYSTEMS")
+	p.filesystemMeters(r, 9)
 
-	// CPUs, GPUs
-	c = col(1)
-	c.header("CPU")
-	c.meter("all ", s.cpuTotal, fmt.Sprintf("%3.0f%%  load %.2f %.2f %.2f", s.cpuTotal, s.load[0], s.load[1], s.load[2]))
-	// the cores, in two columns when they don't fit in one
-	rows := (c.bottom - c.y) / panelLineH()
-	reserve := 5 // for the GPU below
-	split := len(s.cpus) > rows-reserve
-	half := (len(s.cpus) + 1) / 2
-	top := c.y
+	r.header("CPU")
+	r.meter("all ", s.cpuTotal, fmt.Sprintf("%3.0f%%  load %.2f %.2f %.2f", s.cpuTotal, s.load[0], s.load[1], s.load[2]))
 	for i, pct := range s.cpus {
 		after := fmt.Sprintf("%3.0f%%", pct)
 		if t, ok := s.coreTemps[i]; ok {
 			after += fmt.Sprintf(" %3.0f\xb0C", t)
 		}
-		if split && i == half {
-			c.y = top
-			c.x += colW / 2
-		}
-		c.meter(fmt.Sprintf("C%-3d", i), pct, after)
-	}
-	if split {
-		c.x -= colW / 2
-		c.y = top + half*panelLineH()
+		r.meter(fmt.Sprintf("C%-3d", i), pct, after)
 	}
 	if n := len(s.cpuTemps); n > 0 && len(s.coreTemps) == 0 {
-		c.line(fmt.Sprintf("temp %.0f-%.0f\xb0C over %d sensors", s.cpuTemps[0], s.cpuTemps[n-1], n), colorText)
+		r.line(fmt.Sprintf("temp %.0f-%.0f\xb0C over %d sensors", s.cpuTemps[0], s.cpuTemps[n-1], n), colorText)
 	}
-	c.gap()
-	c.header("GPU")
-	p.gpuLines(c)
+	r.header("GPU")
+	p.gpuLines(r)
 
-	// disks, network, sensors: all of them, idle ones marked
-	c = col(2)
-	c.header("DISK I/O")
+	// all of them, idle ones marked
+	r.header("DISK I/O")
 	for _, name := range ioNames(s.diskTotals) {
-		ioLine(c, name, s.disks, "read", "write")
+		ioLine(r, name, s.disks, "read", "write")
 	}
-	c.gap()
-	c.header("NETWORK")
+	r.header("NETWORK")
 	for _, name := range ioNames(s.netTotals) {
-		ioLine(c, name, s.nets, "in", "out")
+		ioLine(r, name, s.nets, "in", "out")
 	}
 	if len(s.sensors) > 0 {
-		c.gap()
-		c.header("SENSORS")
+		r.header("SENSORS")
 		for _, t := range s.sensors {
-			c.line(fmt.Sprintf("%-20s %5.1f\xb0C", t.name, t.temp), colorText)
+			r.line(fmt.Sprintf("%-20s %5.1f\xb0C", t.name, t.temp), colorText)
+		}
+	}
+	return r.rows
+}
+
+// a column of the summary: where it starts, its rows
+type summaryColumn struct {
+	x    int
+	rows []summaryRow
+}
+
+// flowSummary flows rows into columns lines high, each as wide as its
+// widest row, and returns them and the width they take.
+func flowSummary(rows []summaryRow, lines int) ([]summaryColumn, int) {
+	lh := panelLineH()
+	space := 4 * charW()
+	capacity := lines * lh
+	var cols []summaryColumn
+	x, y, colW := 0, capacity, 0 // as if a column were full, to start one
+	for i, r := range rows {
+		rh := lh
+		if r.kind == rowGap {
+			rh = lh / 2
+		}
+		need := rh
+		if r.kind == rowHeader {
+			// the whole section when it fits in a column, its first row
+			// with it otherwise
+			need = sectionH(rows[i:])
+			if need > capacity {
+				need = min(2, len(rows)-i) * lh
+			}
+		}
+		if y+need > capacity {
+			if len(cols) > 0 {
+				x += colW + space
+			}
+			cols = append(cols, summaryColumn{x: x})
+			y, colW = 0, 0
+			if r.kind == rowGap {
+				continue
+			}
+		}
+		cols[len(cols)-1].rows = append(cols[len(cols)-1].rows, r)
+		y += rh
+		colW = max(colW, r.w)
+	}
+	// without the gaps left at their bottoms
+	for i, c := range cols {
+		if n := len(c.rows); n > 0 && c.rows[n-1].kind == rowGap {
+			cols[i].rows = c.rows[:n-1]
+		}
+	}
+	return cols, x + colW
+}
+
+// sectionH is the height of the section rows starts with, up to the next
+// gap.
+func sectionH(rows []summaryRow) int {
+	h := 0
+	for _, r := range rows {
+		if r.kind == rowGap {
+			break
+		}
+		h += panelLineH()
+	}
+	return h
+}
+
+// summaryLines is how many lines the summary needs to fit in width.
+func (p *sysPanel) summaryLines(width, maxLines int) int {
+	rows := p.summaryRows()
+	for lines := panelMinLines; lines < maxLines; lines++ {
+		if _, w := flowSummary(rows, lines); w <= width {
+			return lines
+		}
+	}
+	return maxLines
+}
+
+// fitHeight is the panel's height, for the summary to fit.
+func (p *sysPanel) fitHeight() int {
+	g := p.screen.Geometry()
+	lines := p.summaryLines(int(g.W)-2*panelPad, panelMaxLines(int(g.H)))
+	return panelChromeH() + lines*panelLineH()
+}
+
+func (p *sysPanel) drawSummary(a rect) {
+	cols, _ := flowSummary(p.summaryRows(), a.h/panelLineH())
+	for _, col := range cols {
+		c := &column{p: p, x: a.x + col.x, y: a.y, w: 1 << 20, bottom: a.y + a.h}
+		if c.x >= a.x+a.w {
+			break
+		}
+		for _, r := range col.rows {
+			if r.kind == rowGap {
+				c.gap()
+				continue
+			}
+			r.draw(c)
 		}
 	}
 }
 
-func (p *sysPanel) memoryMeters(c *column) {
+// rowWriter is where the sections put their rows: a column drawing them,
+// or a rowCollector measuring them.
+type rowWriter interface {
+	header(s string)
+	line(s string, fg uint32)
+	meter(label string, pct float64, after string)
+	coloredMeter(label string, pct float64, after string, color uint32)
+}
+
+func (p *sysPanel) memoryMeters(c rowWriter) {
 	m := p.snap.mem
 	for _, row := range []struct {
 		label string
@@ -465,7 +603,7 @@ func (p *sysPanel) memoryMeters(c *column) {
 }
 
 // filesystemMeters shows up to n filesystems' usage, and how many more.
-func (p *sysPanel) filesystemMeters(c *column, n int) {
+func (p *sysPanel) filesystemMeters(c rowWriter, n int) {
 	fs := p.snap.fs
 	if len(fs) == 0 {
 		c.line("none", colorDim)
@@ -484,7 +622,7 @@ func (p *sysPanel) filesystemMeters(c *column, n int) {
 	}
 }
 
-func (p *sysPanel) gpuLines(c *column) {
+func (p *sysPanel) gpuLines(c rowWriter) {
 	if len(p.snap.gpus) == 0 {
 		c.line("no information on this system", colorDim)
 	}

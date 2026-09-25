@@ -3,6 +3,7 @@ package wm
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jezek/xgb/xproto"
 )
@@ -102,5 +103,26 @@ func TestBarAlerts(t *testing.T) {
 		if got := [3]bool{c, m, l}; got != tc.want {
 			t.Errorf("barAlerts(%v, %v, %v, %d) = %v, want %v", tc.cpu, tc.mem, tc.load, tc.cores, got, tc.want)
 		}
+	}
+}
+
+func TestBarForms(t *testing.T) {
+	st := barState{now: time.Date(2026, 9, 25, 13, 45, 0, 0, time.UTC), cores: 14, cpuPercent: 25.5,
+		memPercent: 70, memUsed: 45 << 30, memTotal: 64 << 30, load: [3]float64{3.9, 3.7, 3.5}, hasLoad: true,
+		recording: -1, position: "[01:01/01]", system: "OpenBSD/7.9 (arm64)"}
+	width := func(form int) int {
+		before, after, clock := barPieces(st, form)
+		return textWidth(before) + textWidth(after) + len(clock)*barFont.charW
+	}
+	for form := 1; form < barForms; form++ {
+		if width(form) >= width(form-1) {
+			t.Fatalf("form %d is %d wide, no shorter than form %d, %d", form, width(form), form-1, width(form-1))
+		}
+	}
+	// the alerts stay in the shortest form
+	st.cpuPercent = 95
+	_, after, _ := barPieces(st, barForms-1)
+	if after[0].s != "CPU: 95%" || !after[0].alert {
+		t.Fatalf("shortest form: %+v", after)
 	}
 }

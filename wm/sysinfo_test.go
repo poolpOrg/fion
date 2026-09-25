@@ -165,12 +165,6 @@ func TestAMDGPUs(t *testing.T) {
 }
 
 func TestPanelFormatting(t *testing.T) {
-	if h := panelHeight(800, 14); h > 480 || h < 22*panelLineH() {
-		t.Fatalf("panel height %d for 14 cores on 800 pixels", h)
-	}
-	if h := panelHeight(800, 128); h != 480 {
-		t.Fatalf("panel height %d for 128 cores, want 60%% of the screen", h)
-	}
 	if meterColor(10) != draculaGreen || meterColor(60) != draculaYellow || meterColor(95) != draculaRed {
 		t.Fatalf("meter colors")
 	}
@@ -179,6 +173,39 @@ func TestPanelFormatting(t *testing.T) {
 	}
 	if got := formatUptime(3*time.Hour + 5*time.Minute); got != "3h 5m" {
 		t.Fatalf("formatUptime = %q", got)
+	}
+}
+
+func TestSummaryFlow(t *testing.T) {
+	snap := func(cores int) *sysPanel {
+		p := &sysPanel{}
+		p.snap.host = hostInfo{hostname: "host", cpuModel: "cpu", cores: cores, memTotal: 16 << 30}
+		p.snap.cpus = make([]float64, cores)
+		p.snap.mem = memInfo{total: 16 << 30, used: 8 << 30}
+		p.snap.fs = []fsUsage{{mount: "/", total: 100, used: 50}}
+		p.snap.diskTotals = map[string][2]uint64{"sd0": {1, 1}}
+		p.snap.netTotals = map[string][2]uint64{"em0": {1, 1}, "em1": {1, 1}}
+		return p
+	}
+
+	// a wide screen: the fewest lines, the columns side by side within it
+	p := snap(8)
+	lines := p.summaryLines(1900, 40)
+	cols, w := flowSummary(p.summaryRows(), lines)
+	if lines != panelMinLines || w > 1900 || len(cols) < 3 {
+		t.Fatalf("8 cores on 1900 pixels: %d lines, %d columns, %d pixels", lines, len(cols), w)
+	}
+	for _, c := range cols {
+		if len(c.rows) == 0 || c.rows[0].kind == rowGap || c.rows[len(c.rows)-1].kind == rowHeader {
+			t.Fatalf("a column starts with a gap or ends with a header: %+v", c.rows)
+		}
+	}
+	// a narrow one takes more lines, many cores up to the most allowed
+	if n := p.summaryLines(600, 40); n <= lines {
+		t.Fatalf("8 cores on 600 pixels: %d lines, as many as on 1900", n)
+	}
+	if n := snap(256).summaryLines(600, 40); n != 40 {
+		t.Fatalf("256 cores on 600 pixels: %d lines, want the most", n)
 	}
 }
 
@@ -288,5 +315,54 @@ func TestPanelViews(t *testing.T) {
 	press(t, wm, XK_Escape, 0)
 	if p.shown {
 		t.Fatalf("Escape didn't close the panel")
+	}
+}
+
+func TestPanelShrinksWorkspaces(t *testing.T) {
+	wm := newTestManager(t)
+	drainEvents(t, wm)
+	s := wm.GetActiveScreen()
+	ws := s.GetActiveWorkspace()
+	full := ws.Root.g.H
+
+	if err := s.togglePanel(); err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, wm)
+	if int(ws.Root.g.H) != int(full)-s.panel.h {
+		t.Fatalf("frames %d high with the panel shown, want %d", ws.Root.g.H, int(full)-s.panel.h)
+	}
+	// a new workspace fits too
+	if err := wm.createWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if h := s.GetActiveWorkspace().Root.g.H; int(h) != int(full)-s.panel.h {
+		t.Fatalf("new workspace %d high with the panel shown", h)
+	}
+	if err := s.togglePanel(); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range s.Workspaces {
+		if w.Root.g.H != full {
+			t.Fatalf("frames %d high once the panel is hidden, want %d", w.Root.g.H, full)
+		}
+	}
+}
+
+func TestSummaryKeepsSections(t *testing.T) {
+	line := summaryRow{w: 10}
+	header := summaryRow{kind: rowHeader, w: 10}
+	gap := summaryRow{kind: rowGap}
+	// a section of 3 then one of 4, in columns of 5 lines: the second
+	// starts a column rather than being split
+	rows := []summaryRow{header, line, line, gap, header, line, line, line}
+	cols, _ := flowSummary(rows, 5)
+	if len(cols) != 2 || len(cols[0].rows) != 3 || len(cols[1].rows) != 4 {
+		t.Fatalf("columns %+v", cols)
+	}
+	// a section taller than a column is split
+	rows = []summaryRow{header, line, line, line, line, line, line, line}
+	if cols, _ := flowSummary(rows, 5); len(cols) != 2 {
+		t.Fatalf("columns %+v", cols)
 	}
 }

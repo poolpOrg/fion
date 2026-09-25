@@ -76,27 +76,62 @@ type fontMetrics struct {
 // until loadFont picks one for the screen.
 var font = fontMetrics{fontSpec: fixedFonts[0].fontSpec, charW: 6, ascent: 11, descent: 2}
 
+// the 12x24 font, for the bar above the largest fixed size
+var sony24 = fontSpec{24, "-sony-fixed-medium-r-normal--24-170-100-100-c-120-iso8859-1", "", ""}
+
+// barFontFor returns the fonts to try for the info bar, in order: one size
+// up from the font, which reads better at the bottom of the screen.
+func barFontFor(spec fontSpec) []fontSpec {
+	for i, f := range fixedFonts {
+		if f.fontSpec.plain != spec.plain {
+			continue
+		}
+		if i+1 < len(fixedFonts) {
+			return []fontSpec{fixedFonts[i+1].fontSpec, spec}
+		}
+		return []fontSpec{sony24, spec}
+	}
+	return []fontSpec{spec}
+}
+
+// barFont is the info bar's font, and its metrics.
+var barFont = font
+
 // loadFont picks the font for the screen and measures it, falling back to
-// the smallest fixed font when it can't be opened.
+// the smallest fixed font when it can't be opened, and the bar's.
 func loadFont(conn *xgb.Conn, screenH int) {
 	for _, spec := range []fontSpec{chooseFont(screenH, os.Getenv("FION_FONT")), fixedFonts[0].fontSpec} {
-		fid, err := xproto.NewFontId(conn)
-		if err != nil {
+		if m, ok := measureFont(conn, spec); ok {
+			font = m
+			break
+		}
+	}
+	barFont = font
+	for _, spec := range barFontFor(font.fontSpec) {
+		if m, ok := measureFont(conn, spec); ok {
+			barFont = m
 			return
 		}
-		if err := xproto.OpenFontChecked(conn, fid, uint16(len(spec.plain)), spec.plain).Check(); err != nil {
-			log.Printf("font %q: %v", spec.plain, err)
-			continue
-		}
-		r, err := xproto.QueryFont(conn, xproto.Fontable(fid)).Reply()
-		xproto.CloseFont(conn, fid)
-		if err != nil {
-			continue
-		}
-		font = fontMetrics{fontSpec: spec, charW: int(r.MaxBounds.CharacterWidth),
-			ascent: int(r.FontAscent), descent: int(r.FontDescent)}
-		return
 	}
+}
+
+// measureFont opens a font to read its metrics.
+func measureFont(conn *xgb.Conn, spec fontSpec) (fontMetrics, bool) {
+	fid, err := xproto.NewFontId(conn)
+	if err != nil {
+		return fontMetrics{}, false
+	}
+	if err := xproto.OpenFontChecked(conn, fid, uint16(len(spec.plain)), spec.plain).Check(); err != nil {
+		log.Printf("font %q: %v", spec.plain, err)
+		return fontMetrics{}, false
+	}
+	defer xproto.CloseFont(conn, fid)
+	r, err := xproto.QueryFont(conn, xproto.Fontable(fid)).Reply()
+	if err != nil {
+		return fontMetrics{}, false
+	}
+	return fontMetrics{fontSpec: spec, charW: int(r.MaxBounds.CharacterWidth),
+		ascent: int(r.FontAscent), descent: int(r.FontDescent)}, true
 }
 
 // openFont opens a font, reporting whether it could.

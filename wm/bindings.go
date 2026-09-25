@@ -16,6 +16,7 @@ import (
 //	Shift+arrows       split: new frame on that side
 //	Page Down, Page Up next, previous workspace
 //	w                  new workspace
+//	f                  show the active tab full screen, and back
 //	d                  close what has the focus, asking first
 //	Return             launcher
 //	space              scratchpad
@@ -60,6 +61,7 @@ var bindings = []binding{
 	{XK_Prior, false, false, "previous workspace", func(wm *Manager) error { wm.switchWorkspace(-1); return nil }},
 	{XK_w, false, false, "new workspace", func(wm *Manager) error { return wm.createWorkspace() }},
 
+	{XK_f, false, false, "show the tab full screen / back", func(wm *Manager) error { return wm.GetActiveScreen().toggleFullscreen() }},
 	{XK_d, false, false, "close what has the focus, asking first", func(wm *Manager) error { return wm.requestClose() }},
 	{XK_Return, false, false, "launcher", func(wm *Manager) error { return wm.openLauncher() }},
 	{XK_Space, false, false, "show / hide the scratchpad", func(wm *Manager) error { return wm.GetActiveScreen().toggleScratchpad() }},
@@ -118,6 +120,9 @@ func (wm *Manager) handleBinding(sym xproto.Keysym, shift bool) bool {
 	}
 	for _, b := range bindings {
 		if b.sym == sym && (b.shift == shift || b.anyShift) {
+			if sym != XK_f {
+				wm.GetActiveScreen().leaveFullscreen()
+			}
 			if err := b.do(wm); err != nil {
 				log.Printf("key 0x%x: %v", uint32(sym), err)
 			}

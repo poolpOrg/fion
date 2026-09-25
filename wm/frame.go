@@ -31,8 +31,7 @@ type Frame struct {
 
 func newRootFrame(ws *Workspace) (*Frame, error) {
 	geom := ws.Screen.Geometry()
-	// leave room for the info bar at the bottom
-	return newFrame(ws.Screen, ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - uint16(infoBarOuterH())})
+	return newFrame(ws.Screen, ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: uint16(ws.Screen.workAreaH())})
 }
 
 // newFrame creates an empty leaf frame at g inside parent, at the top of the
