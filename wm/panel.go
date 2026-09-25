@@ -18,10 +18,13 @@ const (
 	draculaGreen = 0x50fa7b
 	draculaCyan  = 0x8be9fd
 
-	panelLineH  = 15
-	panelPad    = 12
-	panelMeterW = 110
+	panelPad = 12
 )
+
+// the panel's sizes, following the font
+func panelLineH() int  { return textH() + 2 }
+func panelMeterW() int { return scaled(110) }
+func panelMeterH() int { return max(4, textH()*8/13) }
 
 type sysPanel struct {
 	screen *Screen
@@ -40,7 +43,7 @@ type sysPanel struct {
 // the screen.
 func panelHeight(screenH, cores int) int {
 	rows := max(cores+6, 22)
-	return min(screenH*6/10, rows*panelLineH+2*panelPad)
+	return min(screenH*6/10, rows*panelLineH()+2*panelPad)
 }
 
 func newSysPanel(s *Screen) (*sysPanel, error) {
@@ -55,16 +58,12 @@ func newSysPanel(s *Screen) (*sysPanel, error) {
 		return nil, err
 	}
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		0, int16(int(g.H)-20-p.h), g.W, uint16(p.h), 0,
+		0, int16(int(g.H)-infoBarOuterH()-p.h), g.W, uint16(p.h), 0,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask,
 		[]uint32{colorBar, xproto.EventMaskExposure | xproto.EventMaskButtonPress})
 	p.window = w
 
-	font := func(name string) (xproto.Font, bool) {
-		fid, _ := xproto.NewFontId(conn)
-		return fid, xproto.OpenFontChecked(conn, fid, uint16(len(name)), name).Check() == nil
-	}
 	newGC := func(fid xproto.Font) xproto.Gcontext {
 		gc, _ := xproto.NewGcontextId(conn)
 		xproto.CreateGC(conn, gc, xproto.Drawable(w), xproto.GcForeground|xproto.GcBackground|xproto.GcFont,
@@ -72,12 +71,12 @@ func newSysPanel(s *Screen) (*sysPanel, error) {
 		xproto.CloseFont(conn, fid)
 		return gc
 	}
-	plain, _ := font("fixed")
+	plain, _ := openFont(conn, font.plain)
 	p.gc = newGC(plain)
 	// the plain font is closed once in its GC: share that GC when the bold
 	// font is missing
 	p.boldGC = p.gc
-	if bold, ok := font("-misc-fixed-bold-r-semicondensed--13-120-75-75-c-60-iso8859-1"); ok {
+	if bold, ok := openFont(conn, font.bold); ok {
 		p.boldGC = newGC(bold)
 	}
 	return p, nil
@@ -167,7 +166,7 @@ type column struct {
 }
 
 func (c *column) room() bool {
-	return c.y+panelLineH <= c.bottom
+	return c.y+panelLineH() <= c.bottom
 }
 
 func (c *column) text(x int, s string, fg uint32, bold bool) {
@@ -180,7 +179,7 @@ func (c *column) text(x int, s string, fg uint32, bold bool) {
 	}
 	conn := c.p.screen.Conn()
 	xproto.ChangeGC(conn, gc, xproto.GcForeground, []uint32{fg})
-	xproto.ImageText8(conn, byte(len(s)), xproto.Drawable(c.p.window), gc, int16(x), int16(c.y+11), s)
+	xproto.ImageText8(conn, byte(len(s)), xproto.Drawable(c.p.window), gc, int16(x), int16(c.y+font.ascent), s)
 }
 
 func (c *column) header(s string) {
@@ -188,18 +187,18 @@ func (c *column) header(s string) {
 		return
 	}
 	c.text(c.x, s, colorAccent, true)
-	c.y += panelLineH
+	c.y += panelLineH()
 }
 
 func (c *column) line(s string, fg uint32) {
 	if !c.room() {
 		return
 	}
-	if n := c.w / fixedCharWidth; len(s) > n {
+	if n := c.w / charW(); len(s) > n {
 		s = s[:max(n, 0)]
 	}
 	c.text(c.x, s, fg, false)
-	c.y += panelLineH
+	c.y += panelLineH()
 }
 
 // meter draws a labelled meter, colored by how high it is, then text
@@ -214,23 +213,23 @@ func (c *column) coloredMeter(label string, pct float64, after string, color uin
 		return
 	}
 	c.text(c.x, label, colorText, false)
-	mx := c.x + (len(label)+1)*fixedCharWidth
+	mx := c.x + (len(label)+1)*charW()
 	conn := c.p.screen.Conn()
 	fill := func(x, w int, color uint32) {
 		xproto.ChangeGC(conn, c.p.gc, xproto.GcForeground, []uint32{color})
 		xproto.PolyFillRectangle(conn, xproto.Drawable(c.p.window), c.p.gc,
-			[]xproto.Rectangle{{X: int16(x), Y: int16(c.y + 3), Width: uint16(w), Height: 8}})
+			[]xproto.Rectangle{{X: int16(x), Y: int16(c.y + (panelLineH()-panelMeterH())/2), Width: uint16(w), Height: uint16(panelMeterH())}})
 	}
-	fill(mx, panelMeterW, colorTab)
-	if w := int(min(100, max(0, pct)) * panelMeterW / 100); w > 0 {
+	fill(mx, panelMeterW(), colorTab)
+	if w := int(min(100, max(0, pct)) * float64(panelMeterW()) / 100); w > 0 {
 		fill(mx, w, color)
 	}
-	c.text(mx+panelMeterW+fixedCharWidth, after, colorText, false)
-	c.y += panelLineH
+	c.text(mx+panelMeterW()+charW(), after, colorText, false)
+	c.y += panelLineH()
 }
 
 func (c *column) gap() {
-	c.y += panelLineH / 2
+	c.y += panelLineH() / 2
 }
 
 func (p *sysPanel) draw() {
@@ -295,7 +294,7 @@ func (p *sysPanel) draw() {
 	c.header("CPU")
 	c.meter("all ", s.cpuTotal, fmt.Sprintf("%3.0f%%", s.cpuTotal))
 	// the cores, in two columns when they don't fit in one
-	rows := (c.bottom - c.y) / panelLineH
+	rows := (c.bottom - c.y) / panelLineH()
 	reserve := 5 // for the GPU below
 	split := len(s.cpus) > rows-reserve
 	half := (len(s.cpus) + 1) / 2
@@ -314,7 +313,7 @@ func (p *sysPanel) draw() {
 	}
 	if split {
 		c.x -= colW / 2
-		c.y = top + half*panelLineH
+		c.y = top + half*panelLineH()
 	}
 	if n := len(s.cpuTemps); n > 0 && len(s.coreTemps) == 0 {
 		c.line(fmt.Sprintf("temp %.0f-%.0f\xb0C over %d sensors", s.cpuTemps[0], s.cpuTemps[n-1], n), colorText)

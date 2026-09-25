@@ -35,6 +35,9 @@ type Manager struct {
 
 	// created the first time it is opened
 	launcher *launcherUI
+
+	// the question Mod+d asks, nil when none
+	confirm *confirmPrompt
 }
 
 func NewManager() (*Manager, error) {
@@ -58,6 +61,7 @@ func NewManager() (*Manager, error) {
 		Clients: make(map[xproto.Window]*Client),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
+	loadFont(conn, int(setup.Roots[0].HeightInPixels))
 
 	if err := wm.initScreens(); err != nil {
 		wm.Close()
@@ -125,13 +129,13 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		[]uint32{xproto.EventMaskStructureNotify | xproto.EventMaskPropertyChange})
 	xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.Conn(), xproto.SetModeInsert, win)
-	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, 20)
+	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, int16(titleH()))
 
 	mask := uint16(xproto.ConfigWindowX |
 		xproto.ConfigWindowY |
 		xproto.ConfigWindowWidth |
 		xproto.ConfigWindowHeight)
-	vals := []uint32{0, 22, uint32(geom.Width), uint32(geom.Height) - 22}
+	vals := []uint32{0, uint32(titleH()), uint32(geom.Width), uint32(int(geom.Height) - titleH())}
 	xproto.ConfigureWindow(wm.Conn(), win, mask, vals)
 
 	//xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})
@@ -421,6 +425,10 @@ func (wm *Manager) Run() error {
 func (wm *Manager) handleEvent(e xgb.Event) bool {
 	switch ev := e.(type) {
 	case xproto.ExposeEvent:
+		if wm.confirm != nil && ev.Window == wm.confirm.window {
+			wm.drawPrompt()
+			break
+		}
 		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
 			if ev.Count == 0 {
 				p.draw()
@@ -575,6 +583,11 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		wm.launcherKey(ev)
 		return false
 	}
+	// so does a question, until answered
+	if wm.confirm != nil {
+		wm.confirmKey(ev)
+		return false
+	}
 
 	km := wm.KeyboardManager
 
@@ -603,6 +616,12 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	if mods == km.Mod && sym == XK_Return {
 		if err := wm.openLauncher(); err != nil {
 			log.Printf("launcher: %v", err)
+		}
+		return false
+	}
+	if mods == km.Mod && sym == XK_d {
+		if err := wm.requestClose(); err != nil {
+			log.Printf("close: %v", err)
 		}
 		return false
 	}
@@ -663,10 +682,6 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 			ws.Map()
 			old.Unmap()
 
-		case XK_d:
-			if err := wm.closeActive(); err != nil {
-				log.Printf("close: %v", err)
-			}
 		case XK_h:
 			if err := wm.GetActiveFrame().splitH(); err != nil {
 				log.Printf("split: %v", err)

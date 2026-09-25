@@ -14,7 +14,7 @@ const scratchpadW, scratchpadH = 640, 480
 // screen.
 func (s *Screen) scratchpadGeometry() Geometry {
 	g := s.Geometry()
-	w, h := min(scratchpadW, g.W-2), min(scratchpadH, g.H-2)
+	w, h := min(uint16(scaled(scratchpadW)), g.W-2), min(uint16(scaled(scratchpadH)), g.H-2)
 	return Geometry{
 		X: int16((g.W - w - 2) / 2),
 		Y: int16((g.H - h - 2) / 2),

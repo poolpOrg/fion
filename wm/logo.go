@@ -199,11 +199,13 @@ func (s *Screen) iconPixmap(kind string, bg uint32) (logoImage, bool) {
 		return s.osIconImage, true
 	}
 	ic := osIcon(kind)
-	pm, ok := s.pixmapOf(ic.w, ic.h, func(x, y int) uint32 { return ic.pixel(x, y, bg) })
+	// pixel art: scaled by whole pixels, as the bar grows with the font
+	k := max(1, infoBarInnerH()/(ic.h+2))
+	pm, ok := s.pixmapOf(ic.w*k, ic.h*k, func(x, y int) uint32 { return ic.pixel(x/k, y/k, bg) })
 	if !ok {
 		return logoImage{}, false
 	}
-	s.osIconImage = logoImage{pixmap: pm, w: ic.w, h: ic.h}
+	s.osIconImage = logoImage{pixmap: pm, w: ic.w * k, h: ic.h * k}
 	return s.osIconImage, true
 }
 
@@ -217,7 +219,7 @@ func (f *Frame) drawLogo() {
 	if m == nil || m.w == 0 {
 		return
 	}
-	areaW, areaH := int(f.g.W), int(f.g.H)-22
+	areaW, areaH := int(f.g.W), int(f.g.H)-titleH()
 	w := min(areaW*45/100, 720)
 	if h := m.h * w / m.w; h > areaH*6/10 {
 		w = w * areaH * 6 / 10 / h
@@ -230,7 +232,7 @@ func (f *Frame) drawLogo() {
 		return
 	}
 	xproto.CopyArea(f.Conn(), xproto.Drawable(img.pixmap), xproto.Drawable(f.window), f.screen.logoGC,
-		0, 0, int16((areaW-img.w)/2), int16(22+(areaH-img.h)/2), uint16(img.w), uint16(img.h))
+		0, 0, int16((areaW-img.w)/2), int16(titleH()+(areaH-img.h)/2), uint16(img.w), uint16(img.h))
 }
 
 // frameByWindow finds a frame of the active screen by its window.

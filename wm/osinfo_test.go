@@ -40,7 +40,7 @@ func TestOSInfo(t *testing.T) {
 func TestOSIcons(t *testing.T) {
 	for _, kind := range []string{"openbsd", "linux", "freebsd", "netbsd", "darwin", "plan9"} {
 		ic := osIcon(kind)
-		if ic.h > infoBarH || ic.w > 2*infoBarH {
+		if ic.h > infoBarInnerH() || ic.w > 2*infoBarInnerH() {
 			t.Errorf("%s icon is %dx%d, too big for the bar", kind, ic.w, ic.h)
 		}
 		drawn := 0
@@ -65,14 +65,14 @@ func TestOSIcons(t *testing.T) {
 	}
 }
 
-func TestInfoBarLogo(t *testing.T) {
+func TestInfoBarStartsWithWorkspace(t *testing.T) {
 	wm := newTestManager(t)
 	ws := wm.GetActiveWorkspace()
 	ws.updateInfoBar()
 
-	// the logo is drawn in the text color at the bar's left end
+	// the workspace indicator, in the text color, at the bar's left end
 	img, err := xproto.GetImage(wm.Conn(), xproto.ImageFormatZPixmap, xproto.Drawable(ws.InfoBarWindow),
-		0, 0, 40, infoBarH, ^uint32(0)).Reply()
+		0, 0, 40, uint16(infoBarInnerH()), ^uint32(0)).Reply()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestInfoBarLogo(t *testing.T) {
 		}
 	}
 	if bright < 20 {
-		t.Fatalf("%d bright pixels where the bar's logo should be", bright)
+		t.Fatalf("%d bright pixels where the workspace indicator should be", bright)
 	}
 }
 

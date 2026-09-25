@@ -17,11 +17,13 @@ const (
 	XK_BackSpace xproto.Keysym = 0xFF08
 	XK_Tab       xproto.Keysym = 0xFF09
 
-	launcherW       = 640
-	launcherInputH  = 24
-	launcherLineH   = 18
 	launcherResults = 10
 )
+
+// the launcher's sizes, following the font
+func launcherW() int      { return scaled(640) }
+func launcherInputH() int { return textH() + 11 }
+func launcherLineH() int  { return textH() + 5 }
 
 type launcherUI struct {
 	*launcher
@@ -47,13 +49,14 @@ func (wm *Manager) openLauncher() error {
 	}
 	ui := wm.launcher
 
-	items := launchItems(desktopApps(applicationDirs()), pathCommands(os.Getenv("PATH")),
-		loadHistory(historyPath()))
-	ui.launcher = newLauncher(items)
-
+	// the keyboard first: what is typed while the sources are read goes to
+	// the launcher, once it is drawn
 	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
 		return err
 	}
+	items := launchItems(desktopApps(applicationDirs()), pathCommands(os.Getenv("PATH")),
+		loadHistory(historyPath()))
+	ui.launcher = newLauncher(items)
 	ui.shown = true
 	xproto.MapWindow(wm.Conn(), ui.window)
 	xproto.ConfigureWindow(wm.Conn(), ui.window, xproto.ConfigWindowStackMode,
@@ -69,9 +72,9 @@ func newLauncherUI(s *Screen) (*launcherUI, error) {
 		return nil, err
 	}
 	g := s.Geometry()
-	width := min(launcherW, g.W-40)
+	width := min(uint16(launcherW()), g.W-40)
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		int16((g.W-width-2)/2), int16(g.H/4), width, launcherInputH, 1,
+		int16((g.W-width-2)/2), int16(g.H/4), width, uint16(launcherInputH()), 1,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{colorBar, colorAccent, xproto.EventMaskExposure})
@@ -82,10 +85,10 @@ func newLauncherUI(s *Screen) (*launcherUI, error) {
 	}
 	xproto.CreateGC(conn, gc, xproto.Drawable(w), xproto.GcForeground|xproto.GcBackground,
 		[]uint32{colorText, colorBar})
-	fid, _ := xproto.NewFontId(conn)
-	_ = xproto.OpenFontChecked(conn, fid, uint16(len("fixed")), "fixed").Check()
-	xproto.ChangeGC(conn, gc, xproto.GcFont, []uint32{uint32(fid)})
-	xproto.CloseFont(conn, fid)
+	if fid, ok := openFont(conn, font.plain); ok {
+		xproto.ChangeGC(conn, gc, xproto.GcFont, []uint32{uint32(fid)})
+		xproto.CloseFont(conn, fid)
+	}
 
 	return &launcherUI{screen: s, window: w, gc: gc}, nil
 }
@@ -101,13 +104,13 @@ func (wm *Manager) closeLauncher() {
 func (wm *Manager) drawLauncher() {
 	ui := wm.launcher
 	conn, d := wm.Conn(), xproto.Drawable(ui.window)
-	width := int(min(launcherW, ui.screen.Geometry().W-40))
-	chars := (width - 12) / fixedCharWidth
+	width := min(launcherW(), int(ui.screen.Geometry().W)-40)
+	chars := (width - 12) / charW()
 
 	n := min(len(ui.matches), launcherResults)
-	height := launcherInputH
+	height := launcherInputH()
 	if n > 0 {
-		height += n*launcherLineH + 4
+		height += n*launcherLineH() + 4
 	}
 	xproto.ConfigureWindow(conn, ui.window, xproto.ConfigWindowHeight, []uint32{uint32(height)})
 
@@ -125,21 +128,21 @@ func (wm *Manager) drawLauncher() {
 	}
 
 	// the input line, showing its end when too long
-	fill(0, 0, width, launcherInputH, colorTab)
+	fill(0, 0, width, launcherInputH(), colorTab)
 	input := "> " + ui.query + "_"
 	if len(input) > chars {
 		input = input[len(input)-chars:]
 	}
-	text(6, 16, input, colorText, colorTab)
+	text(6, baseline(launcherInputH()), input, colorText, colorTab)
 
-	fill(0, launcherInputH, width, height-launcherInputH, colorBar)
+	fill(0, launcherInputH(), width, height-launcherInputH(), colorBar)
 	for i := range n {
 		it := ui.items[ui.matches[i]]
-		y := launcherInputH + 2 + i*launcherLineH
+		y := launcherInputH() + 2 + i*launcherLineH()
 		bg, fg, dim := uint32(colorBar), uint32(colorText), uint32(colorDim)
 		if i == ui.selected {
 			bg, fg, dim = colorAccent, colorAccentText, colorAccentText
-			fill(0, y, width, launcherLineH, bg)
+			fill(0, y, width, launcherLineH(), bg)
 		}
 
 		// the label, then what runs when it differs, then where it comes from
@@ -149,16 +152,16 @@ func (wm *Manager) drawLauncher() {
 		if len(label) > room {
 			label = label[:max(room, 0)]
 		}
-		text(6, y+13, label, fg, bg)
+		text(6, y+baseline(launcherLineH()), label, fg, bg)
 		if it.command != it.label && room-len(label) > 4 {
 			command := it.command
 			if len(command) > room-len(label)-2 {
 				command = command[:room-len(label)-2]
 			}
-			text(6+(len(label)+2)*fixedCharWidth, y+13, command, dim, bg)
+			text(6+(len(label)+2)*charW(), y+baseline(launcherLineH()), command, dim, bg)
 		}
 		if tag != "" {
-			text(width-6-len(tag)*fixedCharWidth, y+13, tag, dim, bg)
+			text(width-6-len(tag)*charW(), y+baseline(launcherLineH()), tag, dim, bg)
 		}
 	}
 }

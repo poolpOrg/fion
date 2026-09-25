@@ -18,7 +18,7 @@ func TestMergeResources(t *testing.T) {
 	}
 
 	// an empty database gets all of them
-	merged := mergeResources("", xtermResources)
+	merged := mergeResources("", xtermTheme())
 	for _, line := range xtermResources {
 		if !has(merged, line) {
 			t.Fatalf("%q missing from %q", line, merged)
@@ -27,7 +27,7 @@ func TestMergeResources(t *testing.T) {
 
 	// the user's resources win, even set for every application
 	user := "*background: white\nXTerm*vt100.color4: blue\n! *foreground: red\nXft.dpi: 96"
-	merged = mergeResources(user, xtermResources)
+	merged = mergeResources(user, xtermTheme())
 	for _, line := range strings.Split(user, "\n") {
 		if !has(merged, line) {
 			t.Fatalf("user's %q lost in %q", line, merged)
@@ -42,7 +42,7 @@ func TestMergeResources(t *testing.T) {
 	}
 
 	// merging again changes nothing
-	if again := mergeResources(merged, xtermResources); again != merged {
+	if again := mergeResources(merged, xtermTheme()); again != merged {
 		t.Fatalf("second merge changed the database:\n%q\n%q", merged, again)
 	}
 }

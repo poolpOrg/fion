@@ -42,7 +42,7 @@ func TestLogoMask(t *testing.T) {
 // f, below its title bar.
 func logoPixels(t *testing.T, f *Frame) int {
 	t.Helper()
-	y := int16(22 + (int(f.g.H)-22)/2 - 50)
+	y := int16(titleH() + (int(f.g.H)-titleH())/2 - 50)
 	img, err := xproto.GetImage(f.Conn(), xproto.ImageFormatZPixmap, xproto.Drawable(f.window),
 		0, y, f.g.W, 100, ^uint32(0)).Reply()
 	if err != nil {
