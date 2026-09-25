@@ -25,6 +25,9 @@ type Workspace struct {
 
 	Root        *Frame
 	ActiveFrame *Frame
+
+	// the project it was opened for, shown in the bar, "" when none
+	name string
 }
 
 func newWorkspace(screen *Screen) (*Workspace, error) {
@@ -85,7 +88,7 @@ func (ws *Workspace) setupInfoBar() error {
 
 	xproto.CreateWindow(
 		ws.Conn(), ws.Screen.Info().RootDepth, w, ws.WorkspaceWindow,
-		geom.X, int16(int(ws.Screen.Info().HeightInPixels)-infoBarOuterH()), // at the bottom
+		0, int16(int(geom.H)-infoBarOuterH()), // at the bottom
 		geom.W-(2), uint16(infoBarInnerH()), // inside its border
 		1, // Set border width to 1px
 		xproto.WindowClassInputOutput, ws.Screen.Info().RootVisual,
@@ -171,6 +174,7 @@ func (ws *Workspace) Map() {
 	}
 	ws.Root.Map()
 	xproto.MapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
+	ws.Manager.showDialogs(ws, true)
 	ws.Screen.raiseScratchpad()
 }
 
@@ -194,6 +198,7 @@ func (ws *Workspace) Unmap() {
 		xproto.UnmapWindow(ws.Manager.Conn(), ws.InfoBarWindow)
 	}
 	xproto.UnmapWindow(ws.Manager.Conn(), ws.WorkspaceWindow)
+	ws.Manager.showDialogs(ws, false)
 }
 
 func (ws *Workspace) Destroy() {
@@ -255,6 +260,7 @@ type barState struct {
 	battery                *batteryInfo
 	recording              time.Duration // -1 when not recording
 	position               string
+	urgent                 string // the workspaces asking for attention
 	system                 string
 }
 
@@ -271,6 +277,9 @@ func barPieces(st barState, form int) (before, after []barText, clock string) {
 			barText{s: " | "})
 	}
 	before = append(before, barText{s: st.position + " | "})
+	if st.urgent != "" {
+		before = append(before, barText{s: st.urgent, alert: true}, barText{s: " | "})
+	}
 
 	if form < 3 {
 		after = append(after, barText{s: st.system + " | "})
@@ -331,6 +340,10 @@ func (ws *Workspace) sampleBar() barState {
 	}
 	screen, workspace, count := ws.position()
 	st.position = fmt.Sprintf("[%02x:%02x/%02x]", screen, workspace, count)
+	if ws.name != "" {
+		st.position = fmt.Sprintf("[%02x:%02x/%02x %s]", screen, workspace, count, ws.name)
+	}
+	st.urgent = ws.Screen.urgentSummary()
 	st.system = thisOS().String()
 	return st
 }

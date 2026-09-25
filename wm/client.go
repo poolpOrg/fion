@@ -16,4 +16,8 @@ type Client struct {
 
 	// asked to close with WM_DELETE_WINDOW: asked again, it is killed
 	closeRequested bool
+
+	// asking for attention, with the urgency hint or EWMH's, until it has
+	// the focus
+	urgent bool
 }

@@ -235,22 +235,20 @@ func (f *Frame) drawLogo() {
 		0, 0, int16((areaW-img.w)/2), int16(titleH()+(areaH-img.h)/2), uint16(img.w), uint16(img.h))
 }
 
-// frameByWindow finds a frame of the active screen by its window.
+// frameByWindow finds a frame by its window.
 func (wm *Manager) frameByWindow(win xproto.Window) *Frame {
-	s := wm.GetActiveScreen()
-	if s == nil {
-		return nil
-	}
-	if s.scratchpad != nil && s.scratchpad.window == win {
-		return s.scratchpad
-	}
 	var found *Frame
-	for _, ws := range s.Workspaces {
-		walk(ws.Root, func(f *Frame) {
-			if f.window == win {
-				found = f
-			}
-		})
+	for _, s := range wm.Screens {
+		if s.scratchpad != nil && s.scratchpad.window == win {
+			return s.scratchpad
+		}
+		for _, ws := range s.Workspaces {
+			walk(ws.Root, func(f *Frame) {
+				if f.window == win {
+					found = f
+				}
+			})
+		}
 	}
 	return found
 }

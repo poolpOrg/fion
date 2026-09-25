@@ -67,7 +67,7 @@ func TestScratchpad(t *testing.T) {
 	if tree, _ := xproto.QueryTree(wm.Conn(), sp.window).Reply(); tree.Parent != s.Info().Root {
 		t.Fatalf("scratchpad is not a child of the root")
 	}
-	checkFocus(t, wm, xproto.Window(xproto.InputFocusPointerRoot))
+	checkFocus(t, wm, wm.noFocus)
 
 	// new windows open in the shown scratchpad, which gives them the focus
 	a := newTestClient(t, wm)
@@ -107,7 +107,7 @@ func TestScratchpad(t *testing.T) {
 	if wm.GetActiveFrame() != ws.ActiveFrame || sp.isActive() || !ws.ActiveFrame.isActive() {
 		t.Fatalf("the workspace's frame is not active once the scratchpad is hidden")
 	}
-	checkFocus(t, wm, xproto.Window(xproto.InputFocusPointerRoot))
+	checkFocus(t, wm, wm.noFocus)
 	if len(wm.Clients) != 2 {
 		t.Fatalf("%d clients managed after hiding the scratchpad, want 2", len(wm.Clients))
 	}
@@ -131,7 +131,7 @@ func TestScratchpad(t *testing.T) {
 	if len(sp.clients) != 0 {
 		t.Fatalf("scratchpad still holds %d clients", len(sp.clients))
 	}
-	checkFocus(t, wm, xproto.Window(xproto.InputFocusPointerRoot))
+	checkFocus(t, wm, wm.noFocus)
 	if err := wm.closeActive(); err == nil {
 		t.Fatalf("removed the scratchpad")
 	}

@@ -87,10 +87,10 @@ func TestBindingsTabsAndWorkspaces(t *testing.T) {
 func TestCheatSheet(t *testing.T) {
 	wm := newTestManager(t)
 	mod := wm.KeyboardManager.Mod
-	lines := strings.Join(cheatSheetLines("Super"), "\n")
+	lines := strings.Join(cheatSheetLines("Super", "Ctrl"), "\n")
 	for _, b := range bindings {
-		if !strings.Contains(lines, b.keys("Super")) || !strings.Contains(lines, b.desc) {
-			t.Errorf("cheat sheet lacks %s: %s", b.keys("Super"), b.desc)
+		if !strings.Contains(lines, b.keys("Super", "Ctrl")) || !strings.Contains(lines, b.desc) {
+			t.Errorf("cheat sheet lacks %s: %s", b.keys("Super", "Ctrl"), b.desc)
 		}
 	}
 	for _, want := range []string{"Super+Shift+Tab", "Super+Page Down", "Super+?"} {
@@ -173,4 +173,33 @@ func TestFullscreen(t *testing.T) {
 	if _, ok := wm.Clients[win]; !ok {
 		t.Fatalf("the client was forgotten, its reparenting taken for a withdrawal")
 	}
+}
+
+func TestMoveTabWithKeys(t *testing.T) {
+	wm := newThreeMonitors(t)
+	km := wm.KeyboardManager
+	cm, _ := km.CtrlMask()
+	a := newTestClient(t, wm)
+	b := newTestClient(t, wm)
+	press(t, wm, XK_Right, km.Mod|xproto.ModMaskShift)
+	// the frame split holds the tabs in its left half
+	left, right := wm.Clients[a].frame, wm.GetActiveFrame()
+	press(t, wm, XK_Left, km.Mod)
+	drainEvents(t, wm)
+
+	// b, the active tab, to the frame on the right, which it follows
+	press(t, wm, XK_Right, km.Mod|cm)
+	if wm.Clients[b].frame != right || wm.GetActiveFrame() != right || len(left.clients) != 1 {
+		t.Fatalf("Mod+Ctrl+Right didn't move the tab to the right frame")
+	}
+	checkFocus(t, wm, b)
+	checkTabs(t, left)
+	checkTabs(t, right)
+
+	// and on to the next monitor
+	press(t, wm, XK_Right, km.Mod|cm)
+	if s := wm.Clients[b].frame.screen; s != wm.Screens[1] || wm.GetActiveScreen() != s {
+		t.Fatalf("Mod+Ctrl+Right didn't move the tab to the next monitor")
+	}
+	_ = a
 }

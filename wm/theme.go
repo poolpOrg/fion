@@ -75,6 +75,9 @@ var xtermResources = []string{
 	"XTerm*color14: #9AEDFE",
 	"XTerm*color7: #BFBFBF",
 	"XTerm*color15: #E6E6E6",
+	// a bell marks the terminal for fion to show, as printf '\a' after a
+	// build does
+	"XTerm*bellIsUrgent: true",
 }
 
 // xtermTheme is xtermResources and the Unicode variant of fion's font:

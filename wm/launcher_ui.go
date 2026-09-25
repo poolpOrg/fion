@@ -54,8 +54,8 @@ func (wm *Manager) openLauncher() error {
 	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
 		return err
 	}
-	items := launchItems(desktopApps(applicationDirs()), pathCommands(os.Getenv("PATH")),
-		loadHistory(historyPath()))
+	items := launchItems(desktopApps(applicationDirs()), projectItems(findProjects(projectRoots())),
+		pathCommands(os.Getenv("PATH")), loadHistory(historyPath()))
 	ui.launcher = newLauncher(items)
 	ui.shown = true
 	xproto.MapWindow(wm.Conn(), ui.window)
@@ -74,7 +74,7 @@ func newLauncherUI(s *Screen) (*launcherUI, error) {
 	g := s.Geometry()
 	width := min(uint16(launcherW()), g.W-40)
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		int16((g.W-width-2)/2), int16(g.H/4), width, uint16(launcherInputH()), 1,
+		g.X+int16((g.W-width-2)/2), g.Y+int16(g.H/4), width, uint16(launcherInputH()), 1,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{colorBar, colorAccent, xproto.EventMaskExposure})
@@ -146,7 +146,7 @@ func (wm *Manager) drawLauncher() {
 		}
 
 		// the label, then what runs when it differs, then where it comes from
-		tag := map[launchKind]string{kindApp: "app", kindHistory: "history"}[it.kind]
+		tag := map[launchKind]string{kindApp: "app", kindHistory: "history", kindProject: "project"}[it.kind]
 		room := chars - len(tag) - 2
 		label := it.label
 		if len(label) > room {
@@ -181,6 +181,15 @@ func (wm *Manager) launcherKey(ev xproto.KeyPressEvent) {
 	case sym == XK_Return, sym == XK_KP_Enter:
 		line := l.line()
 		wm.closeLauncher()
+		if dir, ok := projectDir(line); ok {
+			if err := wm.openProject(dir); err != nil {
+				log.Printf("project %s: %v", dir, err)
+			}
+			if err := appendHistory(historyPath(), line); err != nil {
+				log.Printf("launcher history: %v", err)
+			}
+			return
+		}
 		if line != "" {
 			if l.needsTerminal(line, launcherOpensWindows) {
 				args := inTerminal(line)

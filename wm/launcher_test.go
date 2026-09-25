@@ -49,6 +49,7 @@ func labels(l *launcher) []string {
 func TestLauncherRanking(t *testing.T) {
 	items := launchItems(
 		[]desktopApp{{name: "Firefox", exec: "firefox"}, {name: "Files", exec: "nautilus"}},
+		nil,
 		[]string{"firefox", "file", "fdisk", "xterm"},
 		map[string]int{"fdisk": 3, "xterm -e top": 1},
 	)
@@ -79,7 +80,7 @@ func TestLauncherRanking(t *testing.T) {
 }
 
 func TestLauncherLine(t *testing.T) {
-	items := launchItems(nil, []string{"xterm", "xclock"}, map[string]int{"xterm -e top": 1})
+	items := launchItems(nil, nil, []string{"xterm", "xclock"}, map[string]int{"xterm -e top": 1})
 	l := newLauncher(items)
 
 	// the selection, which the history puts first
@@ -151,7 +152,7 @@ Exec=firefox --private-window %u
 	}
 
 	// terminal applications run in a terminal
-	items := launchItems([]desktopApp{{name: "Top", exec: "top", terminal: true}}, nil, nil)
+	items := launchItems([]desktopApp{{name: "Top", exec: "top", terminal: true}}, nil, nil, nil)
 	if items[0].command != "xterm -e top" {
 		t.Fatalf("terminal application runs %q", items[0].command)
 	}

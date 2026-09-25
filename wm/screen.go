@@ -10,20 +10,20 @@ import (
 	"github.com/jezek/xgb/xproto"
 )
 
+// A Screen is a monitor: a part of an X screen's root, with its own
+// workspaces, bar, panel and scratchpad.
 type Screen struct {
 	wm *Manager
 
 	atoms      atoms
 	screenInfo xproto.ScreenInfo
+	monitor    monitor
 	Workspaces []*Workspace
 
 	activeWorkspaceIdx int
 
 	scratchpad      *Frame // created the first time it is shown
 	scratchpadShown bool
-
-	// the root's children when fion took over, to adopt at startup
-	existing []xproto.Window
 
 	// the logo, by size and colors, and the operating system's icon
 	logos       map[logoKey]logoImage
@@ -44,6 +44,11 @@ type atoms struct {
 	WM_PROTOCOLS, WM_DELETE_WINDOW, WM_TAKE_FOCUS, WM_STATE                    xproto.Atom
 	NET_SUPPORTING_WM_CHECK, NET_SUPPORTED, NET_CLIENT_LIST, NET_ACTIVE_WINDOW xproto.Atom
 	NET_WM_NAME, UTF8_STRING, NET_WM_WINDOW_TYPE, NET_WM_WINDOW_TYPE_DOCK      xproto.Atom
+
+	NET_WM_WINDOW_TYPE_DIALOG, NET_WM_WINDOW_TYPE_UTILITY, NET_WM_WINDOW_TYPE_SPLASH        xproto.Atom
+	NET_WM_WINDOW_TYPE_TOOLBAR, NET_WM_WINDOW_TYPE_NOTIFICATION, NET_WM_WINDOW_TYPE_DESKTOP xproto.Atom
+	NET_WM_STATE, NET_WM_STATE_FULLSCREEN, NET_WM_STATE_DEMANDS_ATTENTION                   xproto.Atom
+	NET_WM_PID, NET_CLOSE_WINDOW                                                            xproto.Atom
 }
 
 func (s *Screen) internAtom(name string) xproto.Atom {
@@ -68,15 +73,42 @@ func (s *Screen) getAtoms() atoms {
 		UTF8_STRING:             s.internAtom("UTF8_STRING"),
 		NET_WM_WINDOW_TYPE:      s.internAtom("_NET_WM_WINDOW_TYPE"),
 		NET_WM_WINDOW_TYPE_DOCK: s.internAtom("_NET_WM_WINDOW_TYPE_DOCK"),
+
+		NET_WM_WINDOW_TYPE_DIALOG:       s.internAtom("_NET_WM_WINDOW_TYPE_DIALOG"),
+		NET_WM_WINDOW_TYPE_UTILITY:      s.internAtom("_NET_WM_WINDOW_TYPE_UTILITY"),
+		NET_WM_WINDOW_TYPE_SPLASH:       s.internAtom("_NET_WM_WINDOW_TYPE_SPLASH"),
+		NET_WM_WINDOW_TYPE_TOOLBAR:      s.internAtom("_NET_WM_WINDOW_TYPE_TOOLBAR"),
+		NET_WM_WINDOW_TYPE_NOTIFICATION: s.internAtom("_NET_WM_WINDOW_TYPE_NOTIFICATION"),
+		NET_WM_WINDOW_TYPE_DESKTOP:      s.internAtom("_NET_WM_WINDOW_TYPE_DESKTOP"),
+		NET_WM_STATE:                    s.internAtom("_NET_WM_STATE"),
+		NET_WM_STATE_FULLSCREEN:         s.internAtom("_NET_WM_STATE_FULLSCREEN"),
+		NET_WM_STATE_DEMANDS_ATTENTION:  s.internAtom("_NET_WM_STATE_DEMANDS_ATTENTION"),
+		NET_WM_PID:                      s.internAtom("_NET_WM_PID"),
+		NET_CLOSE_WINDOW:                s.internAtom("_NET_CLOSE_WINDOW"),
 	}
 }
 
-func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
+func newScreen(wm *Manager, screenInfo xproto.ScreenInfo, m monitor, a atoms) (*Screen, error) {
 	screen := &Screen{
 		wm:         wm,
 		screenInfo: screenInfo,
+		monitor:    m,
+		atoms:      a,
 	}
-	screen.atoms = screen.getAtoms()
+	if ws0, err := newWorkspace(screen); err != nil {
+		return nil, err
+	} else {
+		screen.Workspaces = []*Workspace{ws0}
+		ws0.Map()
+	}
+	return screen, nil
+}
+
+// initRoot takes over an X screen's root, and returns the windows it had,
+// to adopt, and the atoms.
+func (wm *Manager) initRoot(screenInfo xproto.ScreenInfo) ([]xproto.Window, atoms, error) {
+	s := &Screen{wm: wm, screenInfo: screenInfo}
+	s.atoms = s.getAtoms()
 
 	mask := uint32(
 		xproto.EventMaskSubstructureRedirect |
@@ -88,36 +120,31 @@ func newScreen(wm *Manager, screenInfo xproto.ScreenInfo) (*Screen, error) {
 			xproto.EventMaskKeyPress,
 	)
 	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), screenInfo.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
-		return nil, fmt.Errorf("another WM running: %w", err)
+		return nil, s.atoms, fmt.Errorf("another WM running: %w", err)
 	}
 
 	// before creating any window of our own
+	var existing []xproto.Window
 	if tree, err := xproto.QueryTree(wm.Conn(), screenInfo.Root).Reply(); err == nil {
-		screen.existing = tree.Children
+		existing = tree.Children
 	}
 
 	xproto.ChangeWindowAttributes(wm.Conn(), screenInfo.Root, xproto.CwBackPixel, []uint32{colorBackground})
 	xproto.ClearArea(wm.Conn(), false, screenInfo.Root, 0, 0, screenInfo.WidthInPixels, screenInfo.HeightInPixels)
 
-	if err := screen.initEWMH(); err != nil {
-		return nil, err
+	if err := s.initEWMH(); err != nil {
+		return nil, s.atoms, err
 	}
-
-	if ws0, err := newWorkspace(screen); err != nil {
-		return nil, err
-	} else {
-		screen.Workspaces = []*Workspace{ws0}
-		ws0.Map()
-	}
-	return screen, nil
+	return existing, s.atoms, nil
 }
 
 func (s *Screen) Conn() *xgb.Conn {
 	return s.wm.Conn()
 }
 
+// Geometry is the monitor's, in the root's coordinates.
 func (s *Screen) Geometry() Geometry {
-	return Geometry{0, 0, uint16(s.Info().WidthInPixels), uint16(s.Info().HeightInPixels)}
+	return s.monitor.g
 }
 
 func (s *Screen) Info() xproto.ScreenInfo {
@@ -136,8 +163,7 @@ func (s *Screen) initEWMH() error {
 	s.setProp32(s.Info().Root, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setProp32(w, s.atoms.NET_SUPPORTING_WM_CHECK, xproto.AtomWindow, uint32(w))
 	s.setPropStr(w, s.atoms.NET_WM_NAME, s.atoms.UTF8_STRING, "fion")
-	supported := []xproto.Atom{s.atoms.NET_SUPPORTED, s.atoms.NET_SUPPORTING_WM_CHECK, s.atoms.NET_CLIENT_LIST, s.atoms.NET_ACTIVE_WINDOW}
-	s.setPropAtoms(s.Info().Root, s.atoms.NET_SUPPORTED, supported)
+	s.setPropAtoms(s.Info().Root, s.atoms.NET_SUPPORTED, s.supportedAtoms())
 	//wm.updateClientList()
 	return nil
 }
@@ -215,6 +241,7 @@ func (s *Screen) removeWorkspace() {
 	// the one shown, whose place moved with the removal
 	s.activeWorkspaceIdx = slices.Index(s.Workspaces, new)
 
+	s.wm.moveDialogs(old, new)
 	new.Map()
 	old.Destroy()
 }
@@ -231,12 +258,12 @@ func (s *Screen) workAreaH() int {
 
 // layoutWorkspaces fits the workspaces' frames to the work area.
 func (s *Screen) layoutWorkspaces() {
-	h := uint16(s.workAreaH())
+	w, h := s.Geometry().W, uint16(s.workAreaH())
 	for _, ws := range s.Workspaces {
-		if ws.Root == nil || ws.Root.g.H == h {
+		if ws.Root == nil || (ws.Root.g.W == w && ws.Root.g.H == h) {
 			continue
 		}
-		ws.Root.g.H = h
+		ws.Root.g.W, ws.Root.g.H = w, h
 		ws.Root.layout()
 		// the logo, centered again
 		xproto.ClearArea(s.Conn(), true, ws.Root.window, 0, 0, 0, 0)

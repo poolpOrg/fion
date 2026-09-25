@@ -17,15 +17,15 @@ type cheatSheet struct {
 }
 
 // cheatSheetLines lists the bindings, and what the mouse does.
-func cheatSheetLines(mod string) []string {
+func cheatSheetLines(mod, ctrl string) []string {
 	rows := [][2]string{}
 	for _, b := range bindings {
-		rows = append(rows, [2]string{b.keys(mod), b.desc})
+		rows = append(rows, [2]string{b.keys(mod, ctrl), b.desc})
 	}
 	rows = append(rows,
 		[2]string{mod + "+?", "this cheat sheet"},
 		[2]string{mod + "+Escape", "quit fion"},
-		[2]string{"Print", "capture a screenshot or a video, Print again stops it"},
+		[2]string{"Print", "capture a screenshot, a video or a GIF, Print again stops it"},
 		[2]string{"", ""},
 		[2]string{"click a tab", "select it"},
 		[2]string{"drag a tab", "move it to another frame, or within its bar"},
@@ -74,7 +74,8 @@ func (wm *Manager) showCheatSheet() error {
 	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
 		return err
 	}
-	c.lines = cheatSheetLines(wm.KeyboardManager.ModName)
+	_, ctrl := wm.KeyboardManager.CtrlMask()
+	c.lines = cheatSheetLines(wm.KeyboardManager.ModName, ctrl)
 	c.shown = true
 
 	cols := 0
@@ -86,7 +87,7 @@ func (wm *Manager) showCheatSheet() error {
 	h := min((len(c.lines)+2)*panelLineH(), int(g.H)-2)
 	xproto.ConfigureWindow(conn, c.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight|xproto.ConfigWindowStackMode,
-		[]uint32{uint32((int(g.W) - w - 2) / 2), uint32((int(g.H) - h - 2) / 2), uint32(w), uint32(h), xproto.StackModeAbove})
+		[]uint32{uint32(int(g.X) + (int(g.W)-w-2)/2), uint32(int(g.Y) + (int(g.H)-h-2)/2), uint32(w), uint32(h), xproto.StackModeAbove})
 	xproto.MapWindow(conn, c.window)
 	wm.drawCheatSheet()
 	return nil

@@ -27,6 +27,9 @@ type Frame struct {
 	// stacked (splitH), and the first one's share of the space, 0 for half
 	vertical bool
 	ratio    float64
+
+	// whether the title bar's font is a Unicode one
+	barUnicode bool
 }
 
 func newRootFrame(ws *Workspace) (*Frame, error) {
@@ -114,6 +117,9 @@ func (f *Frame) wm() *Manager {
 // isActive reports whether f is the frame the bindings act on: the
 // scratchpad when it is shown, the workspace's active frame otherwise.
 func (f *Frame) isActive() bool {
+	if f.screen != f.wm().GetActiveScreen() {
+		return false
+	}
 	if f.floating() {
 		return f.screen.scratchpadShown
 	}
@@ -164,8 +170,14 @@ func (f *Frame) setuptitleBar() error {
 			colorBar,  // background, of the text drawn by ImageText8
 		},
 	)
-	// bind the font; the GC keeps it alive, the id is no longer needed
-	if fid, ok := openFont(f.Conn(), font.plain); ok {
+	// bind the font, the Unicode one for the titles when there is one;
+	// the GC keeps it alive, the id is no longer needed
+	fid, ok := openFont(f.Conn(), font.unicode)
+	f.barUnicode = ok
+	if !ok {
+		fid, ok = openFont(f.Conn(), font.plain)
+	}
+	if ok {
 		xproto.ChangeGC(f.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
 		xproto.CloseFont(f.Conn(), fid)
 	}
@@ -353,11 +365,8 @@ func (f *Frame) updateTitleBar() {
 	xproto.ClearArea(conn, false, f.titleBar, 0, 0, 0, 0)
 
 	text := func(x int16, s string, fg, bg uint32) {
-		if len(s) > 255 {
-			s = s[:255]
-		}
 		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground|xproto.GcBackground, []uint32{fg, bg})
-		xproto.ImageText8(conn, byte(len(s)), bar, f.barGC, x, int16(baseline(titleH()-2)), s)
+		imageText(conn, bar, f.barGC, f.barUnicode, x, int16(baseline(titleH()-2)), s)
 	}
 
 	if len(f.clients) == 0 {
@@ -373,6 +382,9 @@ func (f *Frame) updateTitleBar() {
 				bg, fg = colorAccent, colorAccentText
 			}
 		}
+		if c, ok := f.wm().Clients[client]; ok && c.urgent {
+			bg, fg = colorAlert, colorAccentText
+		}
 		x := int16(i * w)
 		// a 1px gap between tabs, the last one taking what is left
 		tw := w - 1
@@ -383,10 +395,7 @@ func (f *Frame) updateTitleBar() {
 		xproto.PolyFillRectangle(conn, bar, f.barGC,
 			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(tw, 1)), Height: uint16(titleH() - 2)}})
 
-		title := getWindowName(conn, client)
-		if n := (w - 8) / charW(); len(title) > n {
-			title = title[:max(n, 0)]
-		}
+		title := truncateRunes(getWindowName(conn, client), (w-8)/charW())
 		text(x+4, title, fg, bg)
 	}
 
@@ -427,9 +436,7 @@ func (f *Frame) selectClient(i int) {
 	f.activeClient = i
 	f.showActiveClient()
 	f.updateTitleBar()
-	if f.floating() {
-		f.wm().updateFocus()
-	}
+	f.wm().updateFocus()
 }
 
 // showActiveClient maps the active tab and unmaps the others.

@@ -3,6 +3,7 @@ package wm
 import (
 	"fmt"
 	"log"
+	"unicode/utf8"
 
 	"github.com/jezek/xgb/xproto"
 )
@@ -28,6 +29,12 @@ type confirmPrompt struct {
 // closeQuestion is what Mod+d asks about the active frame, "" when there is
 // nothing to close.
 func (wm *Manager) closeQuestion() string {
+	if d := wm.focusedDialog(); d != 0 {
+		if name := getWindowName(wm.Conn(), d); name != "" {
+			return fmt.Sprintf("Close the dialog %q?", name)
+		}
+		return "Close this dialog?"
+	}
 	frame := wm.GetActiveFrame()
 	if win := frame.GetActiveClient(); win != 0 {
 		name := getWindowName(wm.Conn(), win)
@@ -65,7 +72,12 @@ func (wm *Manager) requestClose() error {
 	if err != nil {
 		return err
 	}
+	dialog := wm.focusedDialog()
 	p.action = func() {
+		if dialog != 0 {
+			wm.closeDialog(dialog)
+			return
+		}
 		if err := wm.closeActive(); err != nil {
 			log.Printf("close: %v", err)
 		}
@@ -105,10 +117,10 @@ func (p *confirmPrompt) setText(text string) {
 // screen.
 func (p *confirmPrompt) place() {
 	g := p.screen.Geometry()
-	w := min((len(p.text)+2)*charW(), int(g.W)-2)
+	w := min((utf8.RuneCountInString(p.text)+2)*charW(), int(g.W)-2)
 	xproto.ConfigureWindow(p.screen.Conn(), p.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowStackMode,
-		[]uint32{uint32((int(g.W) - w - 2) / 2), uint32(g.H / 4), uint32(w), xproto.StackModeAbove})
+		[]uint32{uint32(int(g.X) + (int(g.W)-w-2)/2), uint32(int(g.Y) + int(g.H)/4), uint32(w), xproto.StackModeAbove})
 }
 
 // hidePrompt hides the prompt and gives the keyboard back.
@@ -150,14 +162,9 @@ func (wm *Manager) promptWindow(s *Screen) (*confirmPrompt, error) {
 }
 
 func (p *confirmPrompt) draw() {
-	text := p.text
-	if len(text) > 255 {
-		text = text[:255]
-	}
 	conn := p.screen.Conn()
 	xproto.ClearArea(conn, false, p.window, 0, 0, 0, 0)
-	xproto.ImageText8(conn, byte(len(text)), xproto.Drawable(p.window), p.gc,
-		int16(charW()), int16(baseline(launcherInputH())), text)
+	imageText(conn, xproto.Drawable(p.window), p.gc, false, int16(charW()), int16(baseline(launcherInputH())), p.text)
 }
 
 // confirmKey answers the prompt: d, with or without modifiers, confirms,

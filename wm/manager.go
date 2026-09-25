@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
 	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/randr"
 	"github.com/jezek/xgb/xproto"
 )
 
@@ -19,13 +21,34 @@ type Manager struct {
 
 	KeyboardManager *KeyboardManager
 
+	// the monitors, from left to right, and the one with the focus
 	Screens []*Screen
+	active  int
+
+	// whether the server has RandR, to follow the monitors, and whether
+	// they are to be read again
+	hasRandr        bool
+	monitorsPending bool
+
+	// the root's children when fion took over, to adopt at startup
+	existing []xproto.Window
+
+	// the window taking the keys when no client has the focus, and the
+	// client last told to EWMH as having it
+	noFocus         xproto.Window
+	activeWindow    xproto.Window
+	activeWindowSet bool
 
 	NumLock uint16
 
 	// Clients by window id
 	Clients map[xproto.Window]*Client
 	Frames  map[xproto.Window]*Frame
+
+	// the floating dialogs, and the one with the focus, 0 when the frames
+	// have it
+	dialogs     map[xproto.Window]*dialog
+	dialogFocus xproto.Window
 
 	// tab being dragged, nil when none
 	drag *tabDrag
@@ -47,6 +70,12 @@ type Manager struct {
 
 	// what the event loop runs later, see after
 	later chan func()
+
+	// the frames the windows of processes fion started go to
+	placements map[int32]placement
+
+	// the notification line, created with the first message
+	notes *noteLine
 }
 
 func NewManager() (*Manager, error) {
@@ -68,9 +97,14 @@ func NewManager() (*Manager, error) {
 		//Atoms:   getAtoms(conn),
 		Frames:  make(map[xproto.Window]*Frame),
 		Clients: make(map[xproto.Window]*Client),
+		dialogs: make(map[xproto.Window]*dialog),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
-	loadFont(conn, int(setup.Roots[0].HeightInPixels))
+	// the version fion speaks, for the server to send monitor changes
+	if initRandr(conn) == nil {
+		_, err := randr.QueryVersion(conn, 1, 5).Reply()
+		wm.hasRandr = err == nil
+	}
 
 	if err := wm.initScreens(); err != nil {
 		wm.Close()
@@ -86,16 +120,19 @@ func NewManager() (*Manager, error) {
 // bottom to top, so that the topmost one ends up the active tab. Those
 // that are unmapped will be managed when they are mapped.
 func (wm *Manager) adoptExisting() {
-	// frames are all on the active screen for now
-	s := wm.GetActiveScreen()
-	for _, win := range s.existing {
+	for _, win := range wm.existing {
 		attr, err := xproto.GetWindowAttributes(wm.Conn(), win).Reply()
 		if err != nil || attr.OverrideRedirect || attr.MapState != xproto.MapStateViewable {
 			continue
 		}
-		wm.manageWindow(win, true)
+		// on the monitor it was shown on
+		if g, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(win)).Reply(); err == nil {
+			wm.setActiveScreen(wm.screenAt(g.X+int16(g.Width/2), g.Y+int16(g.Height/2)))
+		}
+		wm.manage(win, true)
 	}
-	s.existing = nil
+	wm.existing = nil
+	wm.setActiveScreen(wm.Screens[0])
 }
 
 func (wm *Manager) tryManage(w xproto.Window) {
@@ -109,7 +146,19 @@ func (wm *Manager) tryManage(w xproto.Window) {
 	if attr.MapState != xproto.MapStateUnmapped {
 		return
 	}
-	wm.manageWindow(w, false)
+	wm.manage(w, false)
+}
+
+// manage makes win a tab, a floating dialog, or shows it as it is.
+func (wm *Manager) manage(win xproto.Window, mapped bool) {
+	switch wm.windowKind(win) {
+	case kindDialog:
+		wm.manageDialog(win, mapped)
+	case kindUnmanaged:
+		xproto.MapWindow(wm.Conn(), win)
+	default:
+		wm.manageWindow(win, mapped)
+	}
 }
 
 // manageWindow makes win a tab of the active frame. mapped tells whether
@@ -125,6 +174,9 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	// in its frame, not over it
 	wm.GetActiveScreen().leaveFullscreen()
 	frame := wm.GetActiveFrame()
+	if f := wm.placedFrame(win); f != nil {
+		frame = f
+	}
 	parentId := frame.GetWindow()
 
 	// Once reparented the client is no longer a child of the root, so the
@@ -152,8 +204,16 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		c.ignoreUnmap++
 	}
 	wm.Clients[win] = c
+	wm.grabClicks(win)
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
+	wm.updateClientList()
+	wm.urgencyChanged(win)
+	if wm.wantsFullscreen(win) {
+		frame.screen.leaveFullscreen()
+		frame.screen.toggleFullscreen()
+	}
+	wm.updateFocus()
 
 	// Attach to active Leaf as a new tab
 	//wm.updateClientList()
@@ -172,9 +232,8 @@ func (wm *Manager) forgetClient(win xproto.Window) *Client {
 	c.frame.RemoveClient(win)
 	c.frame.showActiveClient()
 	c.frame.updateTitleBar()
-	if c.frame.floating() {
-		wm.updateFocus()
-	}
+	wm.updateClientList()
+	wm.updateFocus()
 	return c
 }
 
@@ -190,19 +249,25 @@ func (wm *Manager) closeClient(win xproto.Window) {
 	atoms := c.frame.screen.atoms
 	if !c.closeRequested && wm.supportsProtocol(win, atoms.WM_DELETE_WINDOW) {
 		c.closeRequested = true
-		ev := xproto.ClientMessageEvent{
-			Format: 32,
-			Window: win,
-			Type:   atoms.WM_PROTOCOLS,
-			Data: xproto.ClientMessageDataUnionData32New(
-				[]uint32{uint32(atoms.WM_DELETE_WINDOW), xproto.TimeCurrentTime, 0, 0, 0}),
-		}
-		xproto.SendEvent(wm.Conn(), false, win, xproto.EventMaskNoEvent, string(ev.Bytes()))
-		log.Printf("0x%x asked to close", win)
+		wm.sendDelete(win)
 		return
 	}
 	xproto.KillClient(wm.Conn(), uint32(win))
 	log.Printf("0x%x killed", win)
+}
+
+// sendDelete asks win to close, with WM_DELETE_WINDOW.
+func (wm *Manager) sendDelete(win xproto.Window) {
+	atoms := wm.Screens[0].atoms
+	ev := xproto.ClientMessageEvent{
+		Format: 32,
+		Window: win,
+		Type:   atoms.WM_PROTOCOLS,
+		Data: xproto.ClientMessageDataUnionData32New(
+			[]uint32{uint32(atoms.WM_DELETE_WINDOW), xproto.TimeCurrentTime, 0, 0, 0}),
+	}
+	xproto.SendEvent(wm.Conn(), false, win, xproto.EventMaskNoEvent, string(ev.Bytes()))
+	log.Printf("0x%x asked to close", win)
 }
 
 // supportsProtocol reports whether a window lists protocol in its
@@ -222,6 +287,9 @@ func (wm *Manager) supportsProtocol(win xproto.Window, protocol xproto.Atom) boo
 }
 
 func (wm *Manager) handleDestroyNotify(ev xproto.DestroyNotifyEvent) {
+	if wm.forgetDialog(ev.Window) {
+		return
+	}
 	if wm.forgetClient(ev.Window) != nil {
 		log.Printf("0x%x destroyed", ev.Window)
 	}
@@ -231,6 +299,15 @@ func (wm *Manager) handleUnmapNotify(ev xproto.UnmapNotifyEvent) {
 	// A window that is a child of the root, as when it is adopted, is also
 	// reported to the root: only count the report on the window itself.
 	if ev.Event != ev.Window {
+		return
+	}
+	if d, ok := wm.dialogs[ev.Window]; ok {
+		if d.ignoreUnmap > 0 {
+			d.ignoreUnmap--
+			return
+		}
+		wm.forgetDialog(ev.Window)
+		_ = xproto.ChangeSaveSetChecked(wm.Conn(), xproto.SetModeDelete, ev.Window).Check()
 		return
 	}
 	c, ok := wm.Clients[ev.Window]
@@ -274,13 +351,37 @@ func (wm *Manager) Close() {
 	}
 }
 
+// initScreens takes over the first X screen's root, and makes a Screen of
+// each of its monitors. Servers with several X screens are rare: fion
+// manages the first.
 func (wm *Manager) initScreens() error {
-	for _, scr := range xproto.Setup(wm.xConn).Roots {
-		screen, err := newScreen(wm, scr)
+	info := xproto.Setup(wm.xConn).Roots[0]
+	existing, a, err := wm.initRoot(info)
+	if err != nil {
+		return err
+	}
+	wm.existing = existing
+	if err := wm.newNoFocusWindow(info); err != nil {
+		return err
+	}
+	ms := queryMonitors(wm.Conn(), wm.hasRandr, info.Root, info.WidthInPixels, info.HeightInPixels)
+	// sized for the primary monitor
+	h := ms[0].g.H
+	for _, m := range ms {
+		if m.primary {
+			h = m.g.H
+		}
+	}
+	loadFont(wm.Conn(), int(h))
+	for _, m := range ms {
+		screen, err := newScreen(wm, info, m, a)
 		if err != nil {
 			return err
 		}
 		wm.Screens = append(wm.Screens, screen)
+	}
+	if wm.hasRandr {
+		watchMonitors(wm.Conn(), info.Root)
 	}
 	return nil
 }
@@ -289,7 +390,40 @@ func (wm *Manager) GetActiveScreen() *Screen {
 	if len(wm.Screens) == 0 {
 		return nil
 	}
-	return wm.Screens[0]
+	return wm.Screens[min(wm.active, len(wm.Screens)-1)]
+}
+
+// setActiveScreen gives s the focus, redrawing the title bars of the
+// monitor that loses it and of s.
+func (wm *Manager) setActiveScreen(s *Screen) {
+	i := slices.Index(wm.Screens, s)
+	if i < 0 || i == wm.active {
+		return
+	}
+	old := wm.GetActiveScreen()
+	wm.active = i
+	old.updateTitleBars()
+	s.updateTitleBars()
+	wm.updateFocus()
+	// the messages follow the focus
+	if wm.notes != nil && len(wm.notes.shown) > 0 {
+		wm.drawNotifications()
+	}
+}
+
+// screenAt returns the monitor holding the point x, y of the root, or the
+// nearest one.
+func (wm *Manager) screenAt(x, y int16) *Screen {
+	best, bestD := wm.Screens[0], -1
+	for _, s := range wm.Screens {
+		g := s.Geometry()
+		dx := max(0, int(g.X)-int(x), int(x)-(int(g.X)+int(g.W)-1))
+		dy := max(0, int(g.Y)-int(y), int(y)-(int(g.Y)+int(g.H)-1))
+		if d := dx*dx + dy*dy; bestD < 0 || d < bestD {
+			best, bestD = s, d
+		}
+	}
+	return best
 }
 
 func (wm *Manager) GetActiveWorkspace() *Workspace {
@@ -345,18 +479,16 @@ func (wm *Manager) pumpEvents(done <-chan struct{}) <-chan xEvent {
 
 // spawn starts a program and reaps it when it exits.
 func (wm *Manager) spawn(name string, args ...string) {
-	cmd := exec.Command(name, args...)
+	wm.start(exec.Command(name, args...))
+}
+
+// start starts cmd and reaps it when it exits.
+func (wm *Manager) start(cmd *exec.Cmd) {
 	if err := cmd.Start(); err != nil {
-		log.Printf("spawn %s: %v", name, err)
+		log.Printf("spawn %s: %v", cmd.Path, err)
 		return
 	}
 	go cmd.Wait()
-}
-
-// spawnTerminal starts an xterm, which opens in the active frame, in the
-// colors installXtermTheme set up.
-func (wm *Manager) spawnTerminal() {
-	wm.spawn("xterm")
 }
 
 // Run is the event loop. All state changes and all drawing happen on this
@@ -385,6 +517,11 @@ func (wm *Manager) Run() error {
 	}()
 
 	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
+	if l, err := wm.listenControl(socketPath(os.Getenv("DISPLAY"))); err != nil {
+		log.Printf("control socket: %v; fion msg won't reach this fion", err)
+	} else {
+		defer func() { l.Close(); os.Remove(l.Addr().String()) }()
+	}
 
 	for {
 		select {
@@ -393,6 +530,7 @@ func (wm *Manager) Run() error {
 			return nil
 
 		case <-ticker.C:
+			wm.expireNotifications()
 			if err := wm.recordingFailed(); err != nil {
 				wm.alert("Recording stopped: " + err.Error())
 			}
@@ -440,13 +578,19 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.drawCheatSheet()
 			break
 		}
-		if p := wm.GetActiveScreen().prompt; p != nil && (p.shown || p.noticeShown) && ev.Window == p.window {
-			p.draw()
+		if nl := wm.notes; nl != nil && ev.Window == nl.window {
+			nl.draw()
 			break
 		}
-		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
-			if ev.Count == 0 {
+		if s := wm.promptScreen(ev.Window); s != nil {
+			if p := s.prompt; p.shown || p.noticeShown {
 				p.draw()
+			}
+			break
+		}
+		if s := wm.infoBarScreen(ev.Window); s != nil && s.panel != nil && s.panel.window == ev.Window {
+			if s.panel.shown && ev.Count == 0 {
+				s.panel.draw()
 			}
 			break
 		}
@@ -476,7 +620,7 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 	case xproto.MapRequestEvent:
 		wm.tryManage(ev.Window)
 	case xproto.ConfigureRequestEvent:
-		//wm.handleConfigure(ev)
+		wm.handleConfigureRequest(ev)
 	case xproto.DestroyNotifyEvent:
 		wm.handleDestroyNotify(ev)
 	case xproto.UnmapNotifyEvent:
@@ -488,26 +632,41 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.KeyboardManager.MappingChanged()
 		}
 	case xproto.PropertyNotifyEvent:
-		if ev.Atom == xproto.AtomWmName {
+		if ev.Atom == xproto.AtomWmHints {
+			wm.urgencyChanged(ev.Window)
+		}
+		if name, _ := netWMName(wm.Conn()); ev.Atom == xproto.AtomWmName || ev.Atom == name {
 			if c, ok := wm.Clients[ev.Window]; ok {
 				c.frame.updateTitleBar()
 			}
 		}
 	case xproto.ButtonPressEvent:
+		// a click in a client, grabbed to focus it
+		if ev.Event != ev.Root && wm.clientClicked(ev) {
+			break
+		}
 		if wm.cheatSheetShown() {
 			wm.hideCheatSheet()
+			break
+		}
+		if nl := wm.notes; nl != nil && ev.Event == nl.window {
+			wm.clearNotifications()
 			break
 		}
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
-		} else if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Event == p.window &&
-			p.panelClick(int(ev.EventX), int(ev.EventY)) {
+		} else if s := wm.infoBarScreen(ev.Event); s != nil && s.panel != nil && s.panel.shown && ev.Event == s.panel.window &&
+			s.panel.panelClick(int(ev.EventX), int(ev.EventY)) {
 			// a view's name
-		} else if wm.isInfoBar(ev.Event) && ev.Detail == 1 {
-			if err := wm.GetActiveScreen().togglePanel(); err != nil {
+		} else if s := wm.infoBarScreen(ev.Event); s != nil && ev.Detail == 1 {
+			wm.setActiveScreen(s)
+			if err := s.togglePanel(); err != nil {
 				log.Printf("panel: %v", err)
 			}
+		} else if f := wm.frameByWindow(ev.Event); f != nil {
+			// an empty frame
+			wm.clickTitleBar(f, -1)
 		}
 	case xproto.MotionNotifyEvent:
 		wm.dragMotion(ev)
@@ -542,24 +701,42 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			}
 		}
 		*/
+	case randr.ScreenChangeNotifyEvent, randr.NotifyEvent:
+		wm.monitorsChanged()
 	case xproto.ClientMessageEvent:
-		//wm.handleClientMessage(ev)
+		wm.handleClientMessage(ev)
 	}
 	return false
 }
 
-// isInfoBar reports whether win is an info bar, or the panel expanding it.
-func (wm *Manager) isInfoBar(win xproto.Window) bool {
-	s := wm.GetActiveScreen()
-	if s.panel != nil && s.panel.window == win {
-		return true
-	}
-	for _, ws := range s.Workspaces {
-		if ws.InfoBarWindow == win {
-			return true
+// promptScreen returns the monitor whose prompt win is.
+func (wm *Manager) promptScreen(win xproto.Window) *Screen {
+	for _, s := range wm.Screens {
+		if s.prompt != nil && s.prompt.window == win {
+			return s
 		}
 	}
-	return false
+	return nil
+}
+
+// isInfoBar reports whether win is an info bar, or the panel expanding it.
+func (wm *Manager) isInfoBar(win xproto.Window) bool {
+	return wm.infoBarScreen(win) != nil
+}
+
+// infoBarScreen returns the monitor whose info bar, or panel, win is.
+func (wm *Manager) infoBarScreen(win xproto.Window) *Screen {
+	for _, s := range wm.Screens {
+		if s.panel != nil && s.panel.window == win {
+			return s
+		}
+		for _, ws := range s.Workspaces {
+			if ws.InfoBarWindow == win {
+				return s
+			}
+		}
+	}
+	return nil
 }
 
 // clickTitleBar makes f the active frame and selects the tab at x.
@@ -567,10 +744,12 @@ func (wm *Manager) clickTitleBar(f *Frame, x int16) {
 	if !f.floating() {
 		f.workspace.ActiveFrame = f
 	}
+	wm.setActiveScreen(f.screen)
 	if i := f.tabAt(x); i >= 0 {
 		f.selectClient(i)
 	}
 	f.screen.updateTitleBars()
+	wm.updateFocus()
 }
 
 // closeActive asks the active client to close, then kills it when asked
@@ -629,10 +808,14 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		}
 		return false
 	}
-	if mods&^xproto.ModMaskShift != km.Mod {
+	base, ctrl := mods&^xproto.ModMaskShift, false
+	if cm, _ := km.CtrlMask(); base == km.Mod|cm {
+		base, ctrl = km.Mod, true
+	}
+	if base != km.Mod {
 		return false
 	}
-	return wm.handleBinding(sym, mods&xproto.ModMaskShift != 0)
+	return wm.handleBinding(sym, mods&xproto.ModMaskShift != 0, ctrl)
 }
 
 type Geometry struct {

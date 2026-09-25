@@ -41,9 +41,18 @@ type sysPanel struct {
 
 	view int      // into panelViews
 	tabs [][2]int // the view names' spans, for clicks
+
+	// the processes using the most CPU and the ports listened to,
+	// gathered away from the event loop while their view is shown
+	procs     []procUsage
+	ports     []listenPort
+	portsRead bool
+	procS     procSampler
+	gathering bool
+	gathered  time.Time
 }
 
-var panelViews = []string{"Summary", "CPU", "Memory", "Disk", "Network", "Sensors"}
+var panelViews = []string{"Summary", "CPU", "Memory", "Disk", "Network", "Sensors", "Ports", "Messages"}
 
 // the panel's height in lines, at least what the graphs need, at most
 // half the screen
@@ -69,7 +78,7 @@ func newSysPanel(s *Screen) (*sysPanel, error) {
 		return nil, err
 	}
 	xproto.CreateWindow(conn, s.Info().RootDepth, w, s.Info().Root,
-		0, int16(int(g.H)-infoBarOuterH()-p.h), g.W, uint16(p.h), 0,
+		g.X, g.Y+int16(int(g.H)-infoBarOuterH()-p.h), g.W, uint16(p.h), 0,
 		xproto.WindowClassInputOutput, s.Info().RootVisual,
 		xproto.CwBackPixel|xproto.CwEventMask,
 		[]uint32{colorBar, xproto.EventMaskExposure | xproto.EventMaskButtonPress})
@@ -107,6 +116,7 @@ func (s *Screen) togglePanel() error {
 		p.shown = false
 		xproto.UnmapWindow(s.Conn(), p.window)
 		s.layoutWorkspaces()
+		s.wm.drawNotifications()
 		s.wm.KeyboardManager.UngrabKeyboard()
 		return nil
 	}
@@ -115,13 +125,15 @@ func (s *Screen) togglePanel() error {
 		return err
 	}
 	p.shown = true
+	defer s.wm.drawNotifications()
 	p.snap = p.sampler.sample()
 	p.hist.record(p.snap)
 	// as high as the summary needs, the frames above it
 	p.h = p.fitHeight()
 	g := s.Geometry()
-	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowY|xproto.ConfigWindowHeight,
-		[]uint32{uint32(int(g.H) - infoBarOuterH() - p.h), uint32(p.h)})
+	xproto.ConfigureWindow(s.Conn(), p.window,
+		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
+		[]uint32{uint32(g.X), uint32(int(g.Y) + int(g.H) - infoBarOuterH() - p.h), uint32(g.W), uint32(p.h)})
 	s.layoutWorkspaces()
 	xproto.MapWindow(s.Conn(), p.window)
 	xproto.ConfigureWindow(s.Conn(), p.window, xproto.ConfigWindowStackMode, []uint32{xproto.StackModeAbove})
@@ -136,7 +148,45 @@ func (p *sysPanel) refresh() {
 	}
 	p.snap = p.sampler.sample()
 	p.hist.record(p.snap)
+	p.gather()
 	p.draw()
+}
+
+// gather samples the processes, or the ports, for the view shown, every
+// two seconds, away from the event loop.
+func (p *sysPanel) gather() {
+	view := panelViews[p.view]
+	if (view != "CPU" && view != "Ports") || p.gathering || time.Since(p.gathered) < 2*time.Second {
+		return
+	}
+	p.gathering = true
+	wm := p.screen.wm
+	work := func() func() {
+		var procs []procUsage
+		var ports []listenPort
+		if view == "CPU" {
+			procs = p.procS.top(16)
+		} else {
+			ports = listeningPorts()
+		}
+		return func() {
+			if view == "CPU" {
+				p.procs = procs
+			} else {
+				p.ports, p.portsRead = ports, true
+			}
+			p.gathering, p.gathered = false, time.Now()
+			if p.shown {
+				p.draw()
+			}
+		}
+	}
+	if wm.later == nil {
+		// no event loop, as in tests
+		work()()
+		return
+	}
+	go func() { wm.later <- work() }()
 }
 
 // meterColor is the color of a meter at pct percent.
@@ -277,7 +327,7 @@ func (p *sysPanel) draw() {
 		p.tabs = append(p.tabs, [2]int{x, x + w})
 		x += w + charW()
 	}
-	c.text(x+2*charW(), "Tab, arrows or 1-6 to switch, Escape closes", colorDim, false)
+	c.text(x+2*charW(), fmt.Sprintf("Tab, arrows or 1-%d to switch, Escape closes", len(panelViews)), colorDim, false)
 
 	top := panelPad/2 + panelLineH() + panelPad/2
 	area := rect{panelPad, top, width - 2*panelPad, p.h - top - panelPad/2}
@@ -294,6 +344,10 @@ func (p *sysPanel) draw() {
 		p.drawNetwork(area)
 	case "Sensors":
 		p.drawSensors(area)
+	case "Ports":
+		p.drawPorts(area)
+	case "Messages":
+		p.drawMessages(area)
 	}
 }
 
@@ -661,6 +715,23 @@ func (p *sysPanel) drawCPU(a rect) {
 	p.label(lx+4, c.y+2, fmt.Sprintf("load, of %.0f", loadTop), colorText)
 	y := c.y + gh + lh/2
 
+	// the processes using the most, on the right when there is room
+	if procW := 44 * charW(); a.w > 3*procW {
+		pc := &column{p: p, x: a.x + a.w - procW, y: y, w: procW, bottom: a.y + a.h}
+		pc.header("PROCESSES")
+		if len(p.procs) == 0 {
+			pc.line("measuring...", colorDim)
+		}
+		for _, u := range p.procs {
+			fg := uint32(colorText)
+			if u.cpu < 1 {
+				fg = colorDim
+			}
+			pc.line(fmt.Sprintf("%7d %-18.18s %5.1f%% %8s", u.pid, u.name, u.cpu, humanize.IBytes(u.rss)), fg)
+		}
+		a.w -= procW + panelPad
+	}
+
 	// each core, in a grid
 	n := len(s.cpus)
 	if n == 0 {
@@ -789,6 +860,66 @@ func (p *sysPanel) drawSensors(a rect) {
 	}
 }
 
+// drawMessages lists the last messages posted, the newest first.
+func (p *sysPanel) drawMessages(a rect) {
+	var history []*notification
+	if nl := p.screen.wm.notes; nl != nil {
+		history = nl.history
+	}
+	if len(history) == 0 {
+		p.label(a.x, a.y, "no message yet: fion msg posts some, as fion msg -l error build failed", colorDim)
+		return
+	}
+	c := &column{p: p, x: a.x, y: a.y, w: a.w, bottom: a.y + a.h}
+	for i := len(history) - 1; i >= 0 && c.room(); i-- {
+		n := history[i]
+		c.text(c.x, fmt.Sprintf("%-5s", levelNames[n.level]), n.level.color(), true)
+		c.text(c.x+6*charW(), n.at.Format("Jan 2 15:04:05"), colorDim, false)
+		c.text(c.x+22*charW(), latin1(n.text), colorText, false)
+		c.y += panelLineH()
+	}
+}
+
+// drawPorts lists the TCP ports listened to, and by what, in columns.
+func (p *sysPanel) drawPorts(a rect) {
+	if !p.portsRead {
+		p.label(a.x, a.y, "reading...", colorDim)
+		return
+	}
+	if len(p.ports) == 0 {
+		p.label(a.x, a.y, "no TCP port listened to, or none this system tells", colorDim)
+		return
+	}
+	colW := 48 * charW()
+	cols := max(1, (a.w+panelPad)/(colW+panelPad))
+	rows := max(1, a.h/panelLineH()-1)
+	for i := 0; i < cols; i++ {
+		c := &column{p: p, x: a.x + i*(colW+panelPad), y: a.y, w: colW, bottom: a.y + a.h}
+		if i*rows >= len(p.ports) {
+			break
+		}
+		c.header(fmt.Sprintf("%-6s %-22s %7s %s", "PORT", "ADDRESS", "PID", "PROCESS"))
+		for _, lp := range p.ports[i*rows : min(len(p.ports), (i+1)*rows)] {
+			pid, name := "", lp.name
+			if lp.pid > 0 {
+				pid = fmt.Sprint(lp.pid)
+			}
+			if name == "" {
+				name = "?"
+			}
+			fg := uint32(colorText)
+			// those only this machine reaches
+			if strings.HasPrefix(lp.addr, "127.") || lp.addr == "::1" || lp.addr == "localhost" {
+				fg = colorDim
+			}
+			c.line(fmt.Sprintf("%-6d %-22.22s %7s %s", lp.port, lp.addr, pid, name), fg)
+		}
+	}
+	if n := cols * rows; len(p.ports) > n {
+		p.label(a.x, a.y+a.h-panelLineH(), fmt.Sprintf("%d more", len(p.ports)-n), colorDim)
+	}
+}
+
 // panelKey switches the panel's views, or closes it.
 func (wm *Manager) panelKey(ev xproto.KeyPressEvent) {
 	km := wm.KeyboardManager
@@ -809,6 +940,8 @@ func (wm *Manager) panelKey(ev xproto.KeyPressEvent) {
 	default:
 		return
 	}
+	p.gathered = time.Time{}
+	p.gather()
 	p.draw()
 }
 
@@ -821,6 +954,8 @@ func (p *sysPanel) panelClick(x, y int) bool {
 	for i, t := range p.tabs {
 		if x >= t[0] && x < t[1] {
 			p.view = i
+			p.gathered = time.Time{}
+			p.gather()
 			p.draw()
 			return true
 		}

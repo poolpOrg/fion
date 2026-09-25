@@ -173,3 +173,30 @@ func TestVideoUnavailable(t *testing.T) {
 		t.Fatalf("v went on without ffmpeg")
 	}
 }
+
+func TestGIFConversion(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("no ffmpeg")
+	}
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.mp4"), filepath.Join(dir, "out.gif")
+	if b, err := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+		"-i", "testsrc=size=320x200:rate=30:duration=1", "-pix_fmt", "yuv420p", in).CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg can't make a test video: %v %s", err, b)
+	}
+	// what it tells once done, on the event loop
+	wm := &Manager{later: make(chan func(), 1)}
+	wm.convertToGIF(in, out)
+	select {
+	case <-wm.later:
+	case <-time.After(20 * time.Second):
+		t.Fatalf("the conversion didn't end")
+	}
+	b, err := os.ReadFile(out)
+	if err != nil || !strings.HasPrefix(string(b), "GIF89a") {
+		t.Fatalf("no GIF made: %v", err)
+	}
+	if _, err := os.Stat(in); !os.IsNotExist(err) {
+		t.Fatalf("the video wasn't removed")
+	}
+}
