@@ -116,12 +116,6 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	frame := wm.GetActiveFrame()
 	parentId := frame.GetWindow()
 
-	geom, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(parentId)).Reply()
-	if err != nil {
-		return
-	}
-	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
-
 	// Once reparented the client is no longer a child of the root, so the
 	// root's SubstructureNotify stops reporting on it: watch it directly,
 	// along with its properties for the tab title.
@@ -135,8 +129,7 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		xproto.ConfigWindowY |
 		xproto.ConfigWindowWidth |
 		xproto.ConfigWindowHeight)
-	vals := []uint32{0, uint32(titleH()), uint32(geom.Width), uint32(int(geom.Height) - titleH())}
-	xproto.ConfigureWindow(wm.Conn(), win, mask, vals)
+	xproto.ConfigureWindow(wm.Conn(), win, mask, frame.clientGeometry())
 
 	//xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})
 	//xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{1})

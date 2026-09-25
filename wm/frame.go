@@ -144,7 +144,7 @@ func (f *Frame) setuptitleBar() error {
 	xproto.CreateWindow(
 		f.Conn(), scr.RootDepth, w, f.window,
 		0, 0, // Position at the bottom
-		geom.W-4, uint16(titleH()-2), // inside its border
+		geom.W-2, uint16(titleH()-2), // inside its border
 		1, // Set border width to 1px
 		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
@@ -215,11 +215,10 @@ func (f *Frame) layout() {
 	xproto.ConfigureWindow(f.Conn(), f.window, mask,
 		[]uint32{uint32(f.g.X), uint32(f.g.Y), uint32(f.g.W), uint32(f.g.H)})
 	xproto.ConfigureWindow(f.Conn(), f.titleBar, xproto.ConfigWindowWidth,
-		[]uint32{uint32(f.g.W) - 4})
+		[]uint32{uint32(f.g.W) - 2})
 
 	for _, client := range f.clients {
-		xproto.ConfigureWindow(f.Conn(), client, mask,
-			[]uint32{0, uint32(titleH()), uint32(f.g.W), uint32(int(f.g.H) - titleH())})
+		xproto.ConfigureWindow(f.Conn(), client, mask, f.clientGeometry())
 	}
 
 	if !f.leaf {
@@ -228,6 +227,13 @@ func (f *Frame) layout() {
 			child.layout()
 		}
 	}
+}
+
+// clientGeometry is where a client goes in f, below the title bar, in f's
+// coordinates, as ConfigureWindow's x, y, width and height: its 1px
+// border included, it fills the frame.
+func (f *Frame) clientGeometry() []uint32 {
+	return []uint32{0, uint32(titleH()), uint32(max(int(f.g.W)-2, 1)), uint32(max(int(f.g.H)-titleH()-2, 1))}
 }
 
 // childGeometries divides a split frame between its two children, in the
@@ -308,12 +314,13 @@ func (f *Frame) AddTab(win xproto.Window) {
 
 const ()
 
-// tabWidth is the width of each tab in the title bar.
+// tabWidth is the width of each tab in the title bar, but the last, which
+// takes what is left.
 func (f *Frame) tabWidth() int {
 	if len(f.clients) == 0 {
 		return 0
 	}
-	return (int(f.g.W) - 4) / len(f.clients)
+	return (int(f.g.W) - 2) / len(f.clients)
 }
 
 // tabAt returns the index of the tab at x in the title bar, or -1.
@@ -322,11 +329,10 @@ func (f *Frame) tabAt(x int16) int {
 	if w == 0 || x < 0 {
 		return -1
 	}
-	i := int(x) / w
-	if i >= len(f.clients) {
+	if int(x) >= int(f.g.W)-2 {
 		return -1
 	}
-	return i
+	return min(int(x)/w, len(f.clients)-1)
 }
 
 func (f *Frame) updateTitleBar() {
@@ -355,10 +361,14 @@ func (f *Frame) updateTitleBar() {
 			}
 		}
 		x := int16(i * w)
-		// a 1px gap between tabs
+		// a 1px gap between tabs, the last one taking what is left
+		tw := w - 1
+		if i == len(f.clients)-1 {
+			tw = int(f.g.W) - 2 - i*w
+		}
 		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground, []uint32{bg})
 		xproto.PolyFillRectangle(conn, bar, f.barGC,
-			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(w-1, 1)), Height: uint16(titleH() - 2)}})
+			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(tw, 1)), Height: uint16(titleH() - 2)}})
 
 		title := getWindowName(conn, client)
 		if n := (w - 8) / charW(); len(title) > n {
