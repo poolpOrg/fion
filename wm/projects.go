@@ -107,12 +107,17 @@ func projectDir(line string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if rest, ok := strings.CutPrefix(dir, "~"); ok {
+	return expandHome(dir), true
+}
+
+// expandHome replaces a leading ~ with the home directory.
+func expandHome(path string) string {
+	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == filepath.Separator) {
 		if home, err := os.UserHomeDir(); err == nil {
-			dir = home + rest
+			return home + rest
 		}
 	}
-	return dir, true
+	return path
 }
 
 // layoutStep is a line of a project's .fion: split or focus towards a
