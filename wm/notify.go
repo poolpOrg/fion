@@ -141,7 +141,10 @@ func (wm *Manager) clearNotifications() {
 	}
 }
 
-func noteLineH() int { return textH() + 4 }
+// the line's sizes: those of the bar's font, which it is stacked on
+func noteLineH() int    { return barFont.ascent + barFont.descent + 5 }
+func noteCharW() int    { return barFont.charW }
+func noteBaseline() int { return (noteLineH()-barFont.ascent-barFont.descent)/2 + barFont.ascent }
 
 // drawNotifications shows the messages above the bar of the monitor with
 // the focus, and the panel when it is shown, or hides the line.
@@ -167,10 +170,10 @@ func (wm *Manager) drawNotifications() {
 		gc, _ := xproto.NewGcontextId(conn)
 		xproto.CreateGC(conn, gc, xproto.Drawable(w), xproto.GcForeground|xproto.GcBackground,
 			[]uint32{colorText, colorBar})
-		fid, ok := openFont(conn, font.unicode)
+		fid, ok := openFont(conn, barFont.unicode)
 		nl.unicode = ok
 		if !ok {
-			fid, ok = openFont(conn, font.plain)
+			fid, ok = openFont(conn, barFont.plain)
 		}
 		if ok {
 			xproto.ChangeGC(conn, gc, xproto.GcFont, []uint32{uint32(fid)})
@@ -213,17 +216,17 @@ func (nl *noteLine) draw() {
 		worst = max(worst, n.level)
 	}
 	fill(0, 0, w, 1, worst.color())
-	chars := w/charW() - 2
+	chars := w/noteCharW() - 2
 	for i, n := range nl.shown {
 		y := 1 + i*noteLineH()
-		base := y + baseline(noteLineH())
+		base := y + noteBaseline()
 		tag := fmt.Sprintf(" %-5s ", levelNames[n.level])
-		fill(charW(), y+1, len(tag)*charW(), noteLineH()-2, n.level.color())
-		text(charW(), base, tag, colorAccentText, n.level.color())
+		fill(noteCharW(), y+1, len(tag)*noteCharW(), noteLineH()-2, n.level.color())
+		text(noteCharW(), base, tag, colorAccentText, n.level.color())
 		stamp := n.at.Format("15:04:05")
-		x := (len(tag) + 2) * charW()
+		x := (len(tag) + 2) * noteCharW()
 		text(x, base, stamp, colorDim, colorBar)
-		x += (len(stamp) + 2) * charW()
+		x += (len(stamp) + 2) * noteCharW()
 		text(x, base, truncateRunes(n.text, chars-len(tag)-len(stamp)-4), colorText, colorBar)
 	}
 }
