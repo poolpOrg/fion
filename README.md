@@ -24,11 +24,27 @@ limitations below.
 
 design
 --
-Each X screen holds one or more workspaces, and always shows one of them.
+Each monitor, as RandR reports them, holds one or more workspaces, and
+always shows one of them, with a bar, a panel and a scratchpad of its own.
 A workspace is a tree of frames: it starts as a single frame filling it,
 and any frame can be split in two, stacked or side by side.
 Leaf frames hold X clients as tabs: the frame's title bar has one tab per
-client, and only the active one is shown.
+client, and only the active one is shown.  The arrow bindings cross from
+one monitor to the next past its edge.  A monitor plugged in gets a
+workspace, the workspaces of one unplugged move to the first monitor, and
+`FION_MONITORS`, as `1920x1080+0+0,2560x1440+1920+0`, sets them by hand.
+
+The keyboard focus is the active tab of the active frame, of the monitor
+with the focus: clicking a window focuses it too.  Dialogs, and the other
+windows that don't make sense as tabs, those transient for another, of a
+fixed size, or of the dialog, utility, splash or toolbar types, float
+centered over the window they belong to, with the focus, shown with their
+workspace; docks and notifications are shown as they are.
+
+Titles are read in UTF-8, from `_NET_WM_NAME`.  A window asking for
+attention, with the urgency hint that xterm's bell sets, or EWMH's, has
+its tab in red, and the bar lists the workspaces holding one, until it
+has the focus: `make; printf '\a'` tells when a build is done.
 
 Each screen also has a scratchpad, as in ion: a frame floating centered
 above the workspaces, that `Super+space` shows and hides.  It stays shown
@@ -39,7 +55,8 @@ windows, `Super+t` for a terminal, or drag tabs onto it.
 
 `Super+f` shows the active tab full screen, over the bar and the other
 frames, and `Super+f` again puts it back in its frame; any other binding,
-or a new window, puts it back first.
+or a new window, puts it back first.  Browsers and video players asking
+for full screen get it the same way.
 
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, the operating system with a small icon of its own, as
@@ -57,9 +74,11 @@ summary shows the machine's hardware, the use and temperature of each
 CPU, the GPUs, the memory, the filesystems' usage, and every disk's and
 network interface's throughput, idle ones marked rather than hidden, in
 as many columns as the screen's width holds.  `Tab`, the arrows or `1` to
-`6` switch to its CPU, Memory, Disk, Network and Sensors views, with
-graphs of the time it has been shown, the last ten minutes at most;
-`Escape` closes it.
+`8` switch to its CPU, Memory, Disk, Network, Sensors, Ports and Messages
+views, with graphs of the time it has been shown, the last ten minutes at
+most.  The CPU view lists the processes using the most, the Ports view
+the TCP ports listened to and by what, those only the machine reaches
+dimmed.  `Escape` closes it.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered:
@@ -90,9 +109,10 @@ in a cheat sheet:
 | keys                            | action                                   |
 |---------------------------------|------------------------------------------|
 | `Super+Tab` / `Super+Shift+Tab` | next / previous tab                      |
-| `Super+t`                       | new terminal tab                         |
+| `Super+t`                       | new terminal tab, in the directory of the one with the focus |
 | `Super+Left` `Right` `Up` `Down` | go to the frame on that side            |
 | `Super+Shift+` an arrow         | split: new frame on that side            |
+| `Super+Ctrl+` an arrow          | move the active tab to the frame on that side, and follow it; `Alt` rather than `Ctrl` when Ctrl is the modifier |
 | `Super+Page Down` / `Page Up`   | next / previous workspace                |
 | `Super+w`                       | new workspace                            |
 | `Super+f`                       | show the active tab full screen / back   |
@@ -102,12 +122,13 @@ in a cheat sheet:
 | `Super+Return`                  | open the launcher                        |
 | `Super+space`                   | show / hide the scratchpad               |
 | `Super+s`                       | show / hide the system panel, as clicking the bar does |
+| `Super+n`                       | dismiss the messages                     |
 | `Super+?`                       | this list                                |
 | `Super+Escape`                  | quit fion                                |
-| `Print`                         | capture: `s` a screenshot or `v` a video, then `t` the tab, `f` the frame or `w` the workspace; `Print` again stops a video |
+| `Print`                         | capture: `s` a screenshot, `v` a video or `g` a GIF, then `t` the tab, `f` the frame or `w` the workspace; `Print` again stops a video |
 
-Screenshots are saved as PNG, and videos, recorded with ffmpeg, as MP4, in
-`$XDG_PICTURES_DIR`, or `~/Pictures`, or the home directory.  The bar
+Screenshots are saved as PNG, and videos, recorded with ffmpeg, as MP4 or
+GIF, in `$XDG_PICTURES_DIR`, or `~/Pictures`, or the home directory.  The bar
 shows `REC` while recording.
 
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
@@ -125,6 +146,39 @@ open once they exit, until `Return`: fion tells them from the libraries
 they are linked to, and desktop applications from their entries.  The history
 is kept in `$XDG_STATE_HOME/fion/history`, `~/.local/state/fion/history` by
 default.
+
+The launcher lists the projects too: the git repositories under `~/src`,
+`~/code`, `~/projects`, `~/Wip`, `~/git`, `~/dev` and `~/go/src`, or those
+`FION_PROJECTS` names, separated by colons.  A project opens as a
+workspace named after it, with a terminal in it, or laid out as its
+`.fion` file says: each line a command run in the project, whose window
+opens in the frame active when it ran, or `split` or `focus` towards a
+side:
+
+    # a terminal on the left, the editor on the right, a shell below it
+    xterm
+    split right
+    xterm -e nvim .
+    split down
+    xterm
+
+
+messages
+--
+Scripts, editors and Makefiles post messages on a notification line,
+stacked on the bar of the monitor with the focus, with `fion msg`:
+
+    $ make && fion msg -l ok built || fion msg -l error build failed
+    $ go test ./... 2>&1 | tail -3 | fion msg -l warn
+
+`-l` sets the level, `info`, `ok`, `warn` or `error`, which colors it and
+sets how long it stays, unless `-t` gives seconds; without text, each
+line read is a message.  A click on the line, or `Super+n`, dismisses
+them, and the panel's Messages view keeps the last ones.  `fion ctl`
+drives fion the same way: `fion ctl workspace next`, `prev`, `new` or a
+number, `fion ctl project DIR`, `fion ctl clear`.  Both talk to the fion
+of `$DISPLAY` over a socket of the user's, in `$XDG_RUNTIME_DIR`, or
+fion's state directory.
 
 fion draws its text with the fixed font at a size for the screen: 13
 pixels below 1000 lines, 15 up to 1400, 18 up to 1800, 20 above, and
@@ -163,13 +217,8 @@ by `FION_TEST_DISPLAY`; they are skipped otherwise:
 
 known limitations
 --
-- input focus is only given to the scratchpad and to a tab shown full
-  screen; elsewhere it follows the pointer
-- windows can only be moved between frames with the mouse
-- every window gets a tab, dialogs and transient windows included
-- ConfigureRequest events are ignored, and clients can't ask to be shown
-  full screen themselves
-- only the X screens are handled, not RandR outputs: on a multi-monitor
-  setup a workspace spans all the monitors
-- tab titles are read from `WM_NAME` only, UTF-8 titles show empty
-- EWMH support is limited to announcing the window manager
+- the font is the same on every monitor, sized for the primary one
+- EWMH pagers see no desktops: `_NET_WM_DESKTOP` and the desktop hints
+  are not set
+- windows open in the frame of the line of a `.fion` that started them
+  only when they set `_NET_WM_PID`, as xterm does
