@@ -24,8 +24,9 @@ type Frame struct {
 	leaf bool
 
 	// for a split frame: children side by side (splitV) rather than
-	// stacked (splitH)
+	// stacked (splitH), and the first one's share of the space, 0 for half
 	vertical bool
+	ratio    float64
 }
 
 func newRootFrame(ws *Workspace) (*Frame, error) {
@@ -240,13 +241,21 @@ func (f *Frame) clientGeometry() []uint32 {
 // frame's own coordinates.
 func (f *Frame) childGeometries() (Geometry, Geometry) {
 	if f.vertical {
-		w := f.g.W / 2
+		w := f.firstShare(f.g.W)
 		return Geometry{X: 0, Y: 0, W: w, H: f.g.H},
 			Geometry{X: int16(w), Y: 0, W: f.g.W - w, H: f.g.H}
 	}
-	h := f.g.H / 2
+	h := f.firstShare(f.g.H)
 	return Geometry{X: 0, Y: 0, W: f.g.W, H: h},
 		Geometry{X: 0, Y: int16(h), W: f.g.W, H: f.g.H - h}
+}
+
+// firstShare is how much of total the first child of a split frame takes.
+func (f *Frame) firstShare(total uint16) uint16 {
+	if f.ratio <= 0 || f.ratio >= 1 {
+		return total / 2
+	}
+	return uint16(float64(total) * f.ratio)
 }
 
 // split turns the leaf f into a split frame holding two new leaves, side

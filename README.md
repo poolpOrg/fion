@@ -32,9 +32,13 @@ time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
 the load average above the number of CPUs.  On laptops it also shows the
 battery's charge, its time left, or whether it is charging when plugged
 in, in bold red from 15% on battery.  Clicking the bar, or
-`Super+s`, expands it into a panel with the machine's hardware, the use
-and temperature of each CPU, the GPUs, the memory, and the disk and
-network throughput, refreshed every second.
+`Super+s`, expands it into a panel, refreshed every second.  Its summary
+shows the machine's hardware, the use and temperature of each CPU, the
+GPUs, the memory, the filesystems' usage, and every disk's and network
+interface's throughput, idle ones marked rather than hidden.  `Tab`, the
+arrows or `1` to `6` switch to its CPU, Memory, Disk, Network and Sensors
+views, with graphs of the time it has been shown, the last ten minutes at
+most; `Escape` closes it.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered.
@@ -69,11 +73,18 @@ in a cheat sheet:
 | `Super+Page Down` / `Page Up`   | next / previous workspace                |
 | `Super+w`                       | new workspace                            |
 | `Super+d`, then `d`             | close what has the focus: the active window, asked to close first and killed when it didn't, an empty frame, or a workspace that is a single empty frame but for the last one. `Super+d` asks: `d` confirms, any other key cancels |
+| `Super++` / `Super+-`           | resize the active frame, growing / shrinking: then the arrows move its edge on that side, `+` and `-` switch, `Return` confirms, `Escape` cancels |
+| `Super+m`                       | move the scratchpad: then the arrows move it, `Return` confirms, `Escape` cancels; its place and size are kept for the next time |
 | `Super+Return`                  | open the launcher                        |
 | `Super+space`                   | show / hide the scratchpad               |
 | `Super+s`                       | show / hide the system panel, as clicking the bar does |
 | `Super+?`                       | this list                                |
 | `Super+Escape`                  | quit fion                                |
+| `Print`                         | capture: `s` a screenshot or `v` a video, then `t` the tab, `f` the frame or `w` the workspace; `Print` again stops a video |
+
+Screenshots are saved as PNG, and videos, recorded with ffmpeg, as MP4, in
+`$XDG_PICTURES_DIR`, or `~/Pictures`, or the home directory.  The bar
+shows `REC` while recording.
 
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
 to the frame it is dropped on, the scratchpad included, or to another place

@@ -15,6 +15,7 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/sensors"
@@ -58,17 +59,28 @@ type ioRate struct {
 	in, out float64
 }
 
+// fsUsage is a mounted filesystem's usage.
+type fsUsage struct {
+	mount, fstype string
+	total, used   uint64
+}
+
 type sysSnapshot struct {
-	host      hostInfo
-	cpuTotal  float64
-	cpus      []float64
-	coreTemps map[int]float64
-	cpuTemps  []float64 // the CPU's sensors, when not one per core
-	sensors   []sensorReading
-	gpus      []gpuInfo
-	mem       memInfo
-	disks     []ioRate // nil until two samples were taken
-	nets      []ioRate
+	host       hostInfo
+	cpuTotal   float64
+	cpus       []float64
+	load       [3]float64
+	coreTemps  map[int]float64
+	cpuTemps   []float64 // the CPU's sensors, when not one per core
+	sensors    []sensorReading
+	allSensors []sensorReading // by name
+	gpus       []gpuInfo
+	mem        memInfo
+	fs         []fsUsage
+	disks      []ioRate // nil until two samples were taken
+	nets       []ioRate
+	// read and written, received and sent, since boot
+	diskTotals, netTotals map[string][2]uint64
 }
 
 // sampler takes snapshots, keeping the counters of the last one to turn
@@ -95,8 +107,15 @@ func (s *sampler) sample() sysSnapshot {
 		}
 	}
 
+	if avg, err := load.Avg(); err == nil {
+		snap.load = [3]float64{avg.Load1, avg.Load5, avg.Load15}
+	}
+
 	temps := collectSensors()
 	snap.coreTemps, snap.cpuTemps, snap.sensors = sortSensors(temps)
+	snap.allSensors = append([]sensorReading(nil), temps...)
+	sort.Slice(snap.allSensors, func(i, j int) bool { return snap.allSensors[i].name < snap.allSensors[j].name })
+	snap.fs = collectFilesystems()
 	snap.gpus = collectGPUs()
 
 	if vm, err := mem.VirtualMemory(); err == nil {
@@ -123,6 +142,7 @@ func (s *sampler) sample() sysSnapshot {
 			nets[c.Name] = [2]uint64{c.BytesRecv, c.BytesSent}
 		}
 	}
+	snap.diskTotals, snap.netTotals = disks, nets
 	if !s.prevAt.IsZero() {
 		dt := now.Sub(s.prevAt).Seconds()
 		snap.disks = rates(s.disk, disks, dt)
@@ -130,6 +150,44 @@ func (s *sampler) sample() sysSnapshot {
 	}
 	s.prevAt, s.disk, s.net = now, disks, nets
 	return snap
+}
+
+// collectFilesystems returns the usage of the mounted filesystems worth
+// showing, by mount point.
+func collectFilesystems() []fsUsage {
+	parts, err := disk.Partitions(false)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []fsUsage
+	for _, p := range parts {
+		if seen[p.Mountpoint] || !keepFilesystem(p.Mountpoint, p.Fstype) {
+			continue
+		}
+		seen[p.Mountpoint] = true
+		u, err := disk.Usage(p.Mountpoint)
+		if err != nil || u.Total == 0 {
+			continue
+		}
+		out = append(out, fsUsage{mount: p.Mountpoint, fstype: p.Fstype, total: u.Total, used: u.Used})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].mount < out[j].mount })
+	return out
+}
+
+// keepFilesystem tells the filesystems to show: not the pseudo ones, nor
+// macOS's system volumes, but for the one holding the data.
+func keepFilesystem(mount, fstype string) bool {
+	switch fstype {
+	case "devfs", "autofs", "procfs", "proc", "sysfs", "devtmpfs", "cgroup", "cgroup2",
+		"overlay", "squashfs", "nullfs", "kernfs", "mfs", "fdesc", "linprocfs", "tracefs", "debugfs":
+		return false
+	}
+	if strings.HasPrefix(mount, "/System/Volumes/") && mount != "/System/Volumes/Data" {
+		return false
+	}
+	return !strings.HasPrefix(mount, "/dev") && !strings.HasPrefix(mount, "/proc") && !strings.HasPrefix(mount, "/sys")
 }
 
 // rates turns two samples of counters, dt seconds apart, into rates, by
@@ -241,7 +299,7 @@ var (
 )
 
 // sortSensors sorts temperatures into those of cores, when the sensors
-// say which, those of the CPU otherwise, and the others, hottest first.
+// say which, those of the CPU otherwise, and the others, by name.
 func sortSensors(temps []sensorReading) (cores map[int]float64, cpuTemps []float64, others []sensorReading) {
 	cores = map[int]float64{}
 	for _, t := range temps {
@@ -256,6 +314,7 @@ func sortSensors(temps []sensorReading) (cores map[int]float64, cpuTemps []float
 		}
 	}
 	sort.Float64s(cpuTemps)
-	sort.Slice(others, func(i, j int) bool { return others[i].temp > others[j].temp })
+	// by name, so that they stay in place
+	sort.Slice(others, func(i, j int) bool { return others[i].name < others[j].name })
 	return cores, cpuTemps, others
 }

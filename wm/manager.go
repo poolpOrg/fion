@@ -38,6 +38,15 @@ type Manager struct {
 
 	// created the first time Mod+? shows it
 	cheat *cheatSheet
+
+	// resizing, moving or capturing, nil when none
+	mode *keyMode
+
+	// the video being recorded, nil when none
+	recording *recording
+
+	// what the event loop runs later, see after
+	later chan func()
 }
 
 func NewManager() (*Manager, error) {
@@ -365,6 +374,12 @@ func (wm *Manager) Run() error {
 	defer ticker.Stop()
 	keymap := time.NewTicker(250 * time.Millisecond)
 	defer keymap.Stop()
+	wm.later = make(chan func(), 16)
+	defer func() {
+		if wm.recording != nil {
+			wm.stopRecording()
+		}
+	}()
 
 	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
 
@@ -375,6 +390,9 @@ func (wm *Manager) Run() error {
 			return nil
 
 		case <-ticker.C:
+			if err := wm.recordingFailed(); err != nil {
+				wm.alert("Recording stopped: " + err.Error())
+			}
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
 					ws.updateInfoBar()
@@ -384,6 +402,9 @@ func (wm *Manager) Run() error {
 					s.panel.refresh()
 				}
 			}
+
+		case f := <-wm.later:
+			f()
 
 		case <-keymap.C:
 			if wm.KeyboardManager.CheckMapping() {
@@ -416,8 +437,8 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.drawCheatSheet()
 			break
 		}
-		if wm.confirm != nil && ev.Window == wm.confirm.window {
-			wm.drawPrompt()
+		if p := wm.GetActiveScreen().prompt; p != nil && (p.shown || p.noticeShown) && ev.Window == p.window {
+			p.draw()
 			break
 		}
 		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
@@ -477,6 +498,9 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
+		} else if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Event == p.window &&
+			p.panelClick(int(ev.EventX), int(ev.EventY)) {
+			// a view's name
 		} else if wm.isInfoBar(ev.Event) && ev.Detail == 1 {
 			if err := wm.GetActiveScreen().togglePanel(); err != nil {
 				log.Printf("panel: %v", err)
@@ -583,10 +607,25 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		wm.cheatSheetKey(ev)
 		return false
 	}
+	if wm.mode != nil {
+		wm.modeKey(ev)
+		return false
+	}
+	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
+		wm.panelKey(ev)
+		return false
+	}
 
 	km := wm.KeyboardManager
 	mods := ev.State &^ (xproto.ModMaskLock | km.Num)
 	sym := km.eventKeysym(ev.Detail, ev.State)
+	// Print, alone
+	if sym == XK_Print && mods == 0 {
+		if err := wm.printScreen(); err != nil {
+			log.Printf("capture: %v", err)
+		}
+		return false
+	}
 	if mods&^xproto.ModMaskShift != km.Mod {
 		return false
 	}

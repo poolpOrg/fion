@@ -192,6 +192,12 @@ func (k *KeyboardManager) GrabBindings() {
 			grab(b.sym, mods)
 		}
 		grab(XK_Escape, k.Mod)
+		grab(XK_Print, 0)
+		for alias := range keyAliases {
+			if alias != XK_ISO_LeftTab {
+				grab(alias, k.Mod)
+			}
+		}
 		// wherever the layout puts it, Shift included when it needs it
 		grab(XK_question, k.Mod)
 	}

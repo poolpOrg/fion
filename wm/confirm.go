@@ -12,12 +12,17 @@ import (
 // last one. It asks first, in a line at the top of the screen: d again
 // confirms, any other key cancels.
 
+// confirmPrompt is the line at the top of the screen that asks, or says
+// what keys do in a mode.
 type confirmPrompt struct {
 	screen *Screen
 	window xproto.Window
 	gc     xproto.Gcontext
 	text   string
-	action func()
+	shown  bool
+	action func() // what confirming Mod+d's question does
+
+	noticeShown bool // showing a notice, which doesn't take the keyboard
 }
 
 // closeQuestion is what Mod+d asks about the active frame, "" when there is
@@ -56,32 +61,63 @@ func (wm *Manager) requestClose() error {
 	if question == "" {
 		return nil
 	}
-	s := wm.GetActiveScreen()
-	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
-		return err
-	}
-	p, err := wm.promptWindow(s)
+	p, err := wm.showPrompt(question+"  d: yes, any other key: no", colorAlert)
 	if err != nil {
-		wm.KeyboardManager.UngrabKeyboard()
 		return err
 	}
-	p.text = question + "  d: yes, any other key: no"
 	p.action = func() {
 		if err := wm.closeActive(); err != nil {
 			log.Printf("close: %v", err)
 		}
 	}
 	wm.confirm = p
+	return nil
+}
 
-	// sized to its text, centered, in the upper part of the screen
-	g := s.Geometry()
+// showPrompt shows a line of text at the top of the screen, bordered in
+// color, and takes the keyboard until hidePrompt.
+func (wm *Manager) showPrompt(text string, color uint32) (*confirmPrompt, error) {
+	s := wm.GetActiveScreen()
+	if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err != nil {
+		return nil, err
+	}
+	p, err := wm.promptWindow(s)
+	if err != nil {
+		wm.KeyboardManager.UngrabKeyboard()
+		return nil, err
+	}
+	p.text, p.shown = text, true
+	xproto.ChangeWindowAttributes(wm.Conn(), p.window, xproto.CwBorderPixel, []uint32{color})
+	p.place()
+	xproto.MapWindow(wm.Conn(), p.window)
+	p.draw()
+	return p, nil
+}
+
+// setText changes the prompt's text, as when a mode changes.
+func (p *confirmPrompt) setText(text string) {
+	p.text = text
+	p.place()
+	p.draw()
+}
+
+// place sizes the prompt to its text, centered, in the upper part of the
+// screen.
+func (p *confirmPrompt) place() {
+	g := p.screen.Geometry()
 	w := min((len(p.text)+2)*charW(), int(g.W)-2)
-	xproto.ConfigureWindow(wm.Conn(), p.window,
+	xproto.ConfigureWindow(p.screen.Conn(), p.window,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowStackMode,
 		[]uint32{uint32((int(g.W) - w - 2) / 2), uint32(g.H / 4), uint32(w), xproto.StackModeAbove})
-	xproto.MapWindow(wm.Conn(), p.window)
-	wm.drawPrompt()
-	return nil
+}
+
+// hidePrompt hides the prompt and gives the keyboard back.
+func (wm *Manager) hidePrompt() {
+	if p := wm.GetActiveScreen().prompt; p != nil && p.shown {
+		p.shown = false
+		xproto.UnmapWindow(wm.Conn(), p.window)
+	}
+	wm.KeyboardManager.UngrabKeyboard()
 }
 
 // promptWindow returns the screen's prompt window, made the first time.
@@ -113,14 +149,14 @@ func (wm *Manager) promptWindow(s *Screen) (*confirmPrompt, error) {
 	return s.prompt, nil
 }
 
-func (wm *Manager) drawPrompt() {
-	p := wm.confirm
+func (p *confirmPrompt) draw() {
 	text := p.text
 	if len(text) > 255 {
 		text = text[:255]
 	}
-	xproto.ClearArea(wm.Conn(), false, p.window, 0, 0, 0, 0)
-	xproto.ImageText8(wm.Conn(), byte(len(text)), xproto.Drawable(p.window), p.gc,
+	conn := p.screen.Conn()
+	xproto.ClearArea(conn, false, p.window, 0, 0, 0, 0)
+	xproto.ImageText8(conn, byte(len(text)), xproto.Drawable(p.window), p.gc,
 		int16(charW()), int16(baseline(launcherInputH())), text)
 }
 
@@ -133,8 +169,7 @@ func (wm *Manager) confirmKey(ev xproto.KeyPressEvent) {
 	}
 	p := wm.confirm
 	wm.confirm = nil
-	xproto.UnmapWindow(wm.Conn(), p.window)
-	wm.KeyboardManager.UngrabKeyboard()
+	wm.hidePrompt()
 	if sym == XK_d || sym == XK_D {
 		p.action()
 	}

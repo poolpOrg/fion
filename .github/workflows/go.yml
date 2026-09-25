@@ -17,8 +17,9 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Install Xvfb
-      run: sudo apt-get update && sudo apt-get install -y xvfb
+    # ffmpeg, for the recording test
+    - name: Install Xvfb and ffmpeg
+      run: sudo apt-get update && sudo apt-get install -y xvfb ffmpeg
 
     - name: gofmt
       run: test -z "$(gofmt -l . | tee /dev/stderr)"

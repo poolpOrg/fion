@@ -20,6 +20,8 @@ import (
 //	Return             launcher
 //	space              scratchpad
 //	s                  system panel
+//	+, -               resize the active frame, growing, shrinking
+//	m                  move the scratchpad
 //	?                  cheat sheet
 //	Escape             quit
 
@@ -27,44 +29,60 @@ const (
 	XK_Next        xproto.Keysym = 0xFF56 // Page Down
 	XK_Prior       xproto.Keysym = 0xFF55 // Page Up
 	XK_ISO_LeftTab xproto.Keysym = 0xFE20 // Shift+Tab, on most keymaps
+	XK_equal       xproto.Keysym = 0x003D
+	XK_KP_Add      xproto.Keysym = 0xFFAB
+	XK_KP_Subtract xproto.Keysym = 0xFFAD
 )
 
 type binding struct {
-	sym   xproto.Keysym
-	shift bool
-	desc  string // for the cheat sheet
-	do    func(wm *Manager) error
+	sym      xproto.Keysym
+	shift    bool
+	anyShift bool   // for keys some layouts put on Shift, such as + and ?
+	desc     string // for the cheat sheet
+	do       func(wm *Manager) error
 }
 
 var bindings = []binding{
-	{XK_Tab, false, "next tab", func(wm *Manager) error { wm.GetActiveFrame().cycleClientRight(); return nil }},
-	{XK_Tab, true, "previous tab", func(wm *Manager) error { wm.GetActiveFrame().cycleClientLeft(); return nil }},
-	{XK_t, false, "new terminal tab", func(wm *Manager) error { wm.spawnTerminal(); return nil }},
+	{XK_Tab, false, false, "next tab", func(wm *Manager) error { wm.GetActiveFrame().cycleClientRight(); return nil }},
+	{XK_Tab, true, false, "previous tab", func(wm *Manager) error { wm.GetActiveFrame().cycleClientLeft(); return nil }},
+	{XK_t, false, false, "new terminal tab", func(wm *Manager) error { wm.spawnTerminal(); return nil }},
 
-	{XK_Left, false, "go to the frame on the left", func(wm *Manager) error { return wm.focusFrame(dirLeft) }},
-	{XK_Right, false, "go to the frame on the right", func(wm *Manager) error { return wm.focusFrame(dirRight) }},
-	{XK_Up, false, "go to the frame above", func(wm *Manager) error { return wm.focusFrame(dirUp) }},
-	{XK_Down, false, "go to the frame below", func(wm *Manager) error { return wm.focusFrame(dirDown) }},
-	{XK_Left, true, "split: new frame on the left", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirLeft) }},
-	{XK_Right, true, "split: new frame on the right", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirRight) }},
-	{XK_Up, true, "split: new frame above", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirUp) }},
-	{XK_Down, true, "split: new frame below", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirDown) }},
+	{XK_Left, false, false, "go to the frame on the left", func(wm *Manager) error { return wm.focusFrame(dirLeft) }},
+	{XK_Right, false, false, "go to the frame on the right", func(wm *Manager) error { return wm.focusFrame(dirRight) }},
+	{XK_Up, false, false, "go to the frame above", func(wm *Manager) error { return wm.focusFrame(dirUp) }},
+	{XK_Down, false, false, "go to the frame below", func(wm *Manager) error { return wm.focusFrame(dirDown) }},
+	{XK_Left, true, false, "split: new frame on the left", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirLeft) }},
+	{XK_Right, true, false, "split: new frame on the right", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirRight) }},
+	{XK_Up, true, false, "split: new frame above", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirUp) }},
+	{XK_Down, true, false, "split: new frame below", func(wm *Manager) error { return wm.GetActiveFrame().splitTowards(dirDown) }},
 
-	{XK_Next, false, "next workspace", func(wm *Manager) error { wm.switchWorkspace(1); return nil }},
-	{XK_Prior, false, "previous workspace", func(wm *Manager) error { wm.switchWorkspace(-1); return nil }},
-	{XK_w, false, "new workspace", func(wm *Manager) error { return wm.createWorkspace() }},
+	{XK_Next, false, false, "next workspace", func(wm *Manager) error { wm.switchWorkspace(1); return nil }},
+	{XK_Prior, false, false, "previous workspace", func(wm *Manager) error { wm.switchWorkspace(-1); return nil }},
+	{XK_w, false, false, "new workspace", func(wm *Manager) error { return wm.createWorkspace() }},
 
-	{XK_d, false, "close what has the focus, asking first", func(wm *Manager) error { return wm.requestClose() }},
-	{XK_Return, false, "launcher", func(wm *Manager) error { return wm.openLauncher() }},
-	{XK_Space, false, "show / hide the scratchpad", func(wm *Manager) error { return wm.GetActiveScreen().toggleScratchpad() }},
-	{XK_s, false, "show / hide the system panel", func(wm *Manager) error { return wm.GetActiveScreen().togglePanel() }},
+	{XK_d, false, false, "close what has the focus, asking first", func(wm *Manager) error { return wm.requestClose() }},
+	{XK_Return, false, false, "launcher", func(wm *Manager) error { return wm.openLauncher() }},
+	{XK_Space, false, false, "show / hide the scratchpad", func(wm *Manager) error { return wm.GetActiveScreen().toggleScratchpad() }},
+	{XK_s, false, false, "show / hide the system panel", func(wm *Manager) error { return wm.GetActiveScreen().togglePanel() }},
+
+	{XK_Plus, false, true, "resize, growing: then arrows, Return", func(wm *Manager) error { return wm.startResize(true) }},
+	{XK_Minus, false, true, "resize, shrinking: then arrows, Return", func(wm *Manager) error { return wm.startResize(false) }},
+	{XK_m, false, false, "move the scratchpad: then arrows, Return", func(wm *Manager) error { return wm.startMove() }},
+}
+
+// other keys for the same bindings
+var keyAliases = map[xproto.Keysym]xproto.Keysym{
+	XK_equal:       XK_Plus, // + without Shift, on many layouts
+	XK_KP_Add:      XK_Plus,
+	XK_KP_Subtract: XK_Minus,
+	XK_ISO_LeftTab: XK_Tab,
 }
 
 // keyNames names the keys of the bindings, for the cheat sheet.
 var keyNames = map[xproto.Keysym]string{
 	XK_Tab: "Tab", XK_Left: "Left", XK_Right: "Right", XK_Up: "Up", XK_Down: "Down",
 	XK_Next: "Page Down", XK_Prior: "Page Up", XK_Return: "Return", XK_Space: "space",
-	XK_Escape: "Escape", XK_question: "?",
+	XK_Escape: "Escape", XK_question: "?", XK_Plus: "+", XK_Minus: "-",
 }
 
 // keys names a binding's keys: Super+Shift+Tab.
@@ -82,8 +100,11 @@ func (b binding) keys(mod string) string {
 // handleBinding runs the binding for a key pressed with Mod, and reports
 // whether it was Mod+Escape, to quit.
 func (wm *Manager) handleBinding(sym xproto.Keysym, shift bool) bool {
-	if sym == XK_ISO_LeftTab {
-		sym, shift = XK_Tab, true
+	if alias, ok := keyAliases[sym]; ok {
+		if sym == XK_ISO_LeftTab {
+			shift = true
+		}
+		sym = alias
 	}
 	if sym == XK_Escape && !shift {
 		return true
@@ -96,7 +117,7 @@ func (wm *Manager) handleBinding(sym xproto.Keysym, shift bool) bool {
 		return false
 	}
 	for _, b := range bindings {
-		if b.sym == sym && b.shift == shift {
+		if b.sym == sym && (b.shift == shift || b.anyShift) {
 			if err := b.do(wm); err != nil {
 				log.Printf("key 0x%x: %v", uint32(sym), err)
 			}

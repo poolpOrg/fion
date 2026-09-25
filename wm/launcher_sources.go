@@ -162,15 +162,7 @@ func desktopApps(dirs []string) []desktopApp {
 
 // historyPath is where the launcher keeps the command lines it ran.
 func historyPath() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "fion", "history")
+	return filepath.Join(stateDir(), "history")
 }
 
 // how many of the last command lines run are counted
