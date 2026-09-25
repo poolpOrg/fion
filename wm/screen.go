@@ -28,6 +28,9 @@ type Screen struct {
 	logos       map[logoKey]logoImage
 	osIconImage logoImage
 	logoGC      xproto.Gcontext
+
+	// the expanded info bar, created the first time it is shown
+	panel *sysPanel
 }
 
 type atoms struct {

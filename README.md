@@ -29,7 +29,10 @@ A bar at the bottom of each workspace shows the fion logo, the screen and
 workspace numbers, the operating system with a small icon of its own, as
 `OpenBSD/7.9 (arm64)`, CPU and memory usage, the load average and the
 time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
-the load average above the number of CPUs.
+the load average above the number of CPUs.  Clicking the bar, or
+`Super+s`, expands it into a panel with the machine's hardware, the use
+and temperature of each CPU, the GPUs, the memory, and the disk and
+network throughput, refreshed every second.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered.
@@ -61,6 +64,7 @@ action key without any modifier.
 | `Super+f` `n` / `p`  | next / previous frame                               |
 | `Super+t` `n` / `p`  | next / previous tab in the active frame             |
 | `Super+space`        | show / hide the scratchpad                          |
+| `Super+s`            | show / hide the system panel, as clicking the bar does |
 | `Super+Return`       | open the launcher                                   |
 | `Super+F2`           | start an xterm, in the active frame                 |
 | `F2`                 | start an xterm, when the pointer is not over a window |

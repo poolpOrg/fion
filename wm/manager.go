@@ -389,6 +389,9 @@ func (wm *Manager) Run() error {
 					ws.updateInfoBar()
 				}
 				s.updateTitleBars()
+				if s.panel != nil {
+					s.panel.refresh()
+				}
 			}
 
 		case <-keymap.C:
@@ -418,6 +421,12 @@ func (wm *Manager) Run() error {
 func (wm *Manager) handleEvent(e xgb.Event) bool {
 	switch ev := e.(type) {
 	case xproto.ExposeEvent:
+		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
+			if ev.Count == 0 {
+				p.draw()
+			}
+			break
+		}
 		if wm.launcherOpen() && ev.Window == wm.launcher.window {
 			wm.drawLauncher()
 			break
@@ -465,6 +474,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
+		} else if wm.isInfoBar(ev.Event) && ev.Detail == 1 {
+			if err := wm.GetActiveScreen().togglePanel(); err != nil {
+				log.Printf("panel: %v", err)
+			}
 		}
 	case xproto.MotionNotifyEvent:
 		wm.dragMotion(ev)
@@ -501,6 +514,20 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		*/
 	case xproto.ClientMessageEvent:
 		//wm.handleClientMessage(ev)
+	}
+	return false
+}
+
+// isInfoBar reports whether win is an info bar, or the panel expanding it.
+func (wm *Manager) isInfoBar(win xproto.Window) bool {
+	s := wm.GetActiveScreen()
+	if s.panel != nil && s.panel.window == win {
+		return true
+	}
+	for _, ws := range s.Workspaces {
+		if ws.InfoBarWindow == win {
+			return true
+		}
 	}
 	return false
 }
@@ -576,6 +603,12 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	if mods == km.Mod && sym == XK_Return {
 		if err := wm.openLauncher(); err != nil {
 			log.Printf("launcher: %v", err)
+		}
+		return false
+	}
+	if mods == km.Mod && sym == XK_s {
+		if err := wm.GetActiveScreen().togglePanel(); err != nil {
+			log.Printf("panel: %v", err)
 		}
 		return false
 	}
