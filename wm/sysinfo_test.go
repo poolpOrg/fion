@@ -20,9 +20,72 @@ func TestRates(t *testing.T) {
 	if rates(prev, cur, 0) != nil {
 		t.Fatalf("rates over no time")
 	}
-	busy, idle := activeRates([]ioRate{{"a", 1, 0}, {"b", 0, 0}, {"c", 0, 0}})
-	if len(busy) != 1 || idle != 2 {
-		t.Fatalf("activeRates = %v, %d", busy, idle)
+
+	// all of them, idle or not, sorted
+	names := ioNames(map[string][2]uint64{"utun2": {1, 1}, "en0": {5, 5}, "awdl0": {0, 3}})
+	if strings.Join(names, " ") != "awdl0 en0 utun2" {
+		t.Fatalf("ioNames = %v", names)
+	}
+	if r, ok := rateOf(got, "disk0"); !ok || r.in != 1000 {
+		t.Fatalf("rateOf disk0 = %+v, %v", r, ok)
+	}
+	if _, ok := rateOf(got, "new"); ok {
+		t.Fatalf("a rate for a disk sampled once")
+	}
+}
+
+func TestHistories(t *testing.T) {
+	var s series
+	for i := range historyLen + 10 {
+		s.push(float64(i))
+	}
+	if len(s.vals) != historyLen || s.vals[0] != 10 {
+		t.Fatalf("series kept %d values from %v", len(s.vals), s.vals[0])
+	}
+	if last := s.last(3); len(last) != 3 || last[2] != historyLen+9 {
+		t.Fatalf("last(3) = %v", last)
+	}
+	var none *series
+	if none.last(5) != nil {
+		t.Fatalf("last on no history")
+	}
+
+	// against a top
+	cols, top := graphColumns([]float64{0, 50, 100, 200}, 8, 10, 2, 100)
+	if top != 100 || len(cols) != 4 || cols[1] != 5 || cols[2] != 10 || cols[3] != 10 {
+		t.Fatalf("graphColumns against 100 = %v, %v", cols, top)
+	}
+	// against the peak, only what fits
+	cols, top = graphColumns([]float64{9, 1, 2, 4}, 4, 8, 2, 0)
+	if top != 4 || len(cols) != 2 || cols[0] != 4 || cols[1] != 8 {
+		t.Fatalf("graphColumns against the peak = %v, %v", cols, top)
+	}
+	if cols, top := graphColumns([]float64{0, 0}, 10, 10, 2, 0); top != 0 || cols[0] != 0 {
+		t.Fatalf("graphColumns of zeros = %v, %v", cols, top)
+	}
+
+	h := histories{}
+	h.record(sysSnapshot{cpuTotal: 12, cpus: []float64{1, 2}, mem: memInfo{total: 100, used: 25},
+		nets: []ioRate{{"en0", 5, 6}}, allSensors: []sensorReading{{"cpu0.temp0", 40}}})
+	for key, want := range map[string]float64{"cpu": 12, "cpu1": 2, "mem": 25, "net:en0:out": 6, "temp:cpu0.temp0": 40} {
+		if v := h[key].last(1); len(v) != 1 || v[0] != want {
+			t.Errorf("history %s = %v, want %v", key, v, want)
+		}
+	}
+}
+
+func TestKeepFilesystem(t *testing.T) {
+	for _, tc := range []struct {
+		mount, fstype string
+		want          bool
+	}{
+		{"/", "ffs", true}, {"/home", "ffs", true}, {"/System/Volumes/Data", "apfs", true},
+		{"/System/Volumes/VM", "apfs", false}, {"/dev", "devfs", false}, {"/proc", "proc", false},
+		{"/sys/fs/cgroup", "cgroup2", false},
+	} {
+		if got := keepFilesystem(tc.mount, tc.fstype); got != tc.want {
+			t.Errorf("keepFilesystem(%q, %q) = %v", tc.mount, tc.fstype, got)
+		}
 	}
 }
 
@@ -177,5 +240,53 @@ func TestPanelToggle(t *testing.T) {
 		if viewable() != want {
 			t.Fatalf("panel shown=%v after a click on the bar, want %v", !want, want)
 		}
+	}
+}
+
+func TestPanelViews(t *testing.T) {
+	wm := newTestManager(t)
+	s := wm.GetActiveScreen()
+	if err := s.togglePanel(); err != nil {
+		t.Fatal(err)
+	}
+	p := s.panel
+	for range 3 {
+		time.Sleep(50 * time.Millisecond)
+		p.refresh()
+	}
+	drainEvents(t, wm)
+
+	// keys switch the views
+	for _, step := range []struct {
+		sym   xproto.Keysym
+		state uint16
+		want  string
+	}{
+		{XK_Tab, 0, "CPU"}, {XK_Left, 0, "Summary"}, {'4', 0, "Disk"},
+		{XK_Tab, xproto.ModMaskShift, "Memory"}, {XK_Right, 0, "Disk"},
+	} {
+		press(t, wm, step.sym, step.state)
+		if got := panelViews[p.view]; got != step.want {
+			t.Fatalf("view %s after key 0x%x, want %s", got, uint32(step.sym), step.want)
+		}
+	}
+
+	// so does a click on a view's name
+	tab := p.tabs[5]
+	wm.handleEvent(xproto.ButtonPressEvent{Event: p.window, Detail: 1, EventX: int16((tab[0] + tab[1]) / 2), EventY: int16(panelPad)})
+	if panelViews[p.view] != "Sensors" {
+		t.Fatalf("view %s after clicking Sensors", panelViews[p.view])
+	}
+
+	// every view draws, without X errors
+	for i := range panelViews {
+		p.view = i
+		p.draw()
+		drainEvents(t, wm)
+	}
+
+	press(t, wm, XK_Escape, 0)
+	if p.shown {
+		t.Fatalf("Escape didn't close the panel")
 	}
 }

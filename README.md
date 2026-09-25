@@ -32,9 +32,13 @@ time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
 the load average above the number of CPUs.  On laptops it also shows the
 battery's charge, its time left, or whether it is charging when plugged
 in, in bold red from 15% on battery.  Clicking the bar, or
-`Super+s`, expands it into a panel with the machine's hardware, the use
-and temperature of each CPU, the GPUs, the memory, and the disk and
-network throughput, refreshed every second.
+`Super+s`, expands it into a panel, refreshed every second.  Its summary
+shows the machine's hardware, the use and temperature of each CPU, the
+GPUs, the memory, the filesystems' usage, and every disk's and network
+interface's throughput, idle ones marked rather than hidden.  `Tab`, the
+arrows or `1` to `6` switch to its CPU, Memory, Disk, Network and Sensors
+views, with graphs of the time it has been shown, the last ten minutes at
+most; `Escape` closes it.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered.
