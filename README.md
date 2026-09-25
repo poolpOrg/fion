@@ -23,7 +23,7 @@ above the workspaces, that `Super+space` shows and hides.  It stays shown
 when switching workspaces.  While it is shown, it is the active frame: new
 windows open in it, the tab bindings act on it and it has the keyboard
 focus.  It can't be split or removed.  To fill it, show it and start
-windows, `Super+F2` for a terminal, or drag tabs onto it.
+windows, `Super+t` for a terminal, or drag tabs onto it.
 
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, the operating system with a small icon of its own, as
@@ -57,24 +57,23 @@ or, from a clone:
 
 key bindings
 --
-Bindings use a prefix: press `Super+w` or `Super+f`, release, then press the
-action key without any modifier.
+All bindings use one modifier, Super by default, and `Super+?` shows them
+in a cheat sheet:
 
-| keys                 | action                                              |
-|----------------------|-----------------------------------------------------|
-| `Super+w` `c`        | create a workspace                                  |
-| `Super+w` `n` / `p`  | next / previous workspace                           |
-| `Super+w` `h`        | split the active frame top / bottom                 |
-| `Super+w` `v`        | split the active frame left / right                 |
-| `Super+d`, then `d`  | close what has the focus: ask the active window to close, and kill it when it didn't; in an empty frame, remove the frame; in a workspace that is a single empty frame, remove the workspace, but for the last one. `Super+d` asks first: `d` confirms, any other key cancels |
-| `Super+f` `n` / `p`  | next / previous frame                               |
-| `Super+t` `n` / `p`  | next / previous tab in the active frame             |
-| `Super+space`        | show / hide the scratchpad                          |
-| `Super+s`            | show / hide the system panel, as clicking the bar does |
-| `Super+Return`       | open the launcher                                   |
-| `Super+F2`           | start an xterm, in the active frame                 |
-| `F2`                 | start an xterm, when the pointer is not over a window |
-| `Super+Escape`       | quit fion                                           |
+| keys                            | action                                   |
+|---------------------------------|------------------------------------------|
+| `Super+Tab` / `Super+Shift+Tab` | next / previous tab                      |
+| `Super+t`                       | new terminal tab                         |
+| `Super+Left` `Right` `Up` `Down` | go to the frame on that side            |
+| `Super+Shift+` an arrow         | split: new frame on that side            |
+| `Super+Page Down` / `Page Up`   | next / previous workspace                |
+| `Super+w`                       | new workspace                            |
+| `Super+d`, then `d`             | close what has the focus: the active window, asked to close first and killed when it didn't, an empty frame, or a workspace that is a single empty frame but for the last one. `Super+d` asks: `d` confirms, any other key cancels |
+| `Super+Return`                  | open the launcher                        |
+| `Super+space`                   | show / hide the scratchpad               |
+| `Super+s`                       | show / hide the system panel, as clicking the bar does |
+| `Super+?`                       | this list                                |
+| `Super+Escape`                  | quit fion                                |
 
 Clicking a tab selects it and its frame.  Dragging a tab moves its window
 to the frame it is dropped on, the scratchpad included, or to another place

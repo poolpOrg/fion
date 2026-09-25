@@ -27,9 +27,6 @@ type Manager struct {
 	Clients map[xproto.Window]*Client
 	Frames  map[xproto.Window]*Frame
 
-	// pending key prefix (M_Workspace, M_Frame, M_Client), 0 when none
-	mode int
-
 	// tab being dragged, nil when none
 	drag *tabDrag
 
@@ -38,6 +35,9 @@ type Manager struct {
 
 	// the question Mod+d asks, nil when none
 	confirm *confirmPrompt
+
+	// created the first time Mod+? shows it
+	cheat *cheatSheet
 }
 
 func NewManager() (*Manager, error) {
@@ -116,12 +116,6 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	frame := wm.GetActiveFrame()
 	parentId := frame.GetWindow()
 
-	geom, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(parentId)).Reply()
-	if err != nil {
-		return
-	}
-	fmt.Println("Parent geom:", geom, geom.Width, geom.Height, geom.X, geom.Y)
-
 	// Once reparented the client is no longer a child of the root, so the
 	// root's SubstructureNotify stops reporting on it: watch it directly,
 	// along with its properties for the tab title.
@@ -135,8 +129,7 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		xproto.ConfigWindowY |
 		xproto.ConfigWindowWidth |
 		xproto.ConfigWindowHeight)
-	vals := []uint32{0, uint32(titleH()), uint32(geom.Width), uint32(int(geom.Height) - titleH())}
-	xproto.ConfigureWindow(wm.Conn(), win, mask, vals)
+	xproto.ConfigureWindow(wm.Conn(), win, mask, frame.clientGeometry())
 
 	//xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})
 	//xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{1})
@@ -310,12 +303,6 @@ func (wm *Manager) GetActiveClient() xproto.Window {
 	return wm.GetActiveFrame().GetActiveClient()
 }
 
-const (
-	M_Workspace = 1
-	M_Frame     = 2
-	M_Client    = 3 // tabs of the active frame
-)
-
 // xEvent is what the X connection hands us: an event or an error, never both.
 type xEvent struct {
 	event xgb.Event
@@ -425,6 +412,10 @@ func (wm *Manager) Run() error {
 func (wm *Manager) handleEvent(e xgb.Event) bool {
 	switch ev := e.(type) {
 	case xproto.ExposeEvent:
+		if wm.cheatSheetShown() && ev.Window == wm.cheat.window {
+			wm.drawCheatSheet()
+			break
+		}
 		if wm.confirm != nil && ev.Window == wm.confirm.window {
 			wm.drawPrompt()
 			break
@@ -479,6 +470,10 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			}
 		}
 	case xproto.ButtonPressEvent:
+		if wm.cheatSheetShown() {
+			wm.hideCheatSheet()
+			break
+		}
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
@@ -570,220 +565,32 @@ func (wm *Manager) closeActive() error {
 	return nil
 }
 
-// handleKeyPress implements the prefix bindings (Mod+w, Mod+f, Mod+t) and
-// reports whether the user asked to quit.
-//
-// The prefixes and Mod+Escape are grabbed on the root, so they reach fion
-// wherever the pointer is. A prefix then grabs the whole keyboard until the
-// key that completes it, so that key doesn't go to the client under the
-// pointer either.
+// handleKeyPress runs the binding of a key pressed with Mod, and reports
+// whether the user asked to quit. The bindings are grabbed on the root, so
+// they reach fion wherever the pointer is.
 func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	// the launcher has the keyboard; what is typed there isn't logged
 	if wm.launcherOpen() {
 		wm.launcherKey(ev)
 		return false
 	}
-	// so does a question, until answered
+	// so do a question, until answered, and the cheat sheet
 	if wm.confirm != nil {
 		wm.confirmKey(ev)
 		return false
 	}
+	if wm.cheatSheetShown() {
+		wm.cheatSheetKey(ev)
+		return false
+	}
 
 	km := wm.KeyboardManager
-
 	mods := ev.State &^ (xproto.ModMaskLock | km.Num)
 	sym := km.eventKeysym(ev.Detail, ev.State)
-
-	log.Printf("KeyPressed: %d %x %d", ev.Detail, sym, mods)
-
-	if mods == km.Mod && (sym == XK_w || sym == XK_f || sym == XK_t) {
-		switch sym {
-		case XK_w:
-			wm.mode = M_Workspace
-		case XK_f:
-			wm.mode = M_Frame
-		case XK_t:
-			wm.mode = M_Client
-		}
-		if err := km.GrabKeyboard(ev.Root); err != nil {
-			log.Printf("grab keyboard: %v", err)
-		}
+	if mods&^xproto.ModMaskShift != km.Mod {
 		return false
 	}
-	if mods == km.Mod && sym == XK_Escape {
-		return true
-	}
-	if mods == km.Mod && sym == XK_Return {
-		if err := wm.openLauncher(); err != nil {
-			log.Printf("launcher: %v", err)
-		}
-		return false
-	}
-	if mods == km.Mod && sym == XK_d {
-		if err := wm.requestClose(); err != nil {
-			log.Printf("close: %v", err)
-		}
-		return false
-	}
-	if mods == km.Mod && sym == XK_s {
-		if err := wm.GetActiveScreen().togglePanel(); err != nil {
-			log.Printf("panel: %v", err)
-		}
-		return false
-	}
-	if mods == km.Mod && sym == XK_F2 {
-		wm.spawnTerminal()
-		return false
-	}
-	if mods == km.Mod && sym == XK_Space {
-		if err := wm.GetActiveScreen().toggleScratchpad(); err != nil {
-			log.Printf("scratchpad: %v", err)
-		}
-		return false
-	}
-
-	// pressing Shift or releasing Mod and pressing it again doesn't
-	// complete a prefix
-	if wm.mode != 0 && isModifierKey(sym) {
-		return false
-	}
-
-	mode := wm.mode
-	wm.mode = 0
-	if mode != 0 {
-		km.UngrabKeyboard()
-	}
-	if mods != 0 {
-		mode = 0
-	}
-
-	if mode == 0 {
-		switch sym {
-		case XK_F1:
-			fmt.Println("TODO: browser")
-		case XK_F2:
-			wm.spawnTerminal()
-		}
-	}
-
-	if mode == M_Workspace {
-		switch sym {
-		case XK_c:
-			screen := wm.GetActiveScreen()
-			if screen == nil {
-				return false
-			}
-			old := wm.GetActiveWorkspace()
-			ws, err := screen.newWorkspace()
-			if err != nil {
-				log.Printf("newWorkspace: %v", err)
-				return false
-			}
-			ws.Map()
-			old.Unmap()
-
-		case XK_h:
-			if err := wm.GetActiveFrame().splitH(); err != nil {
-				log.Printf("split: %v", err)
-			}
-
-		case XK_v:
-			if err := wm.GetActiveFrame().splitV(); err != nil {
-				log.Printf("split: %v", err)
-			}
-
-		case XK_p:
-			old := wm.GetActiveWorkspace()
-			new := wm.GetActiveScreen().cycleWorkspaceLeft()
-			if old != nil && old != new {
-				new.Map()
-				old.Unmap()
-			}
-
-		case XK_n:
-			old := wm.GetActiveWorkspace()
-			new := wm.GetActiveScreen().cycleWorkspaceRight()
-			if old != nil && old != new {
-				new.Map()
-				old.Unmap()
-			}
-		}
-	}
-
-	// the tiled frames are behind the scratchpad while it is shown
-	if mode == M_Frame && wm.GetActiveScreen().scratchpadShown {
-		log.Printf("the scratchpad is shown, frame cycling ignored")
-		mode = 0
-	}
-	if mode == M_Frame {
-		switch sym {
-		case XK_p:
-			fmt.Println("previous workspace")
-			wm.GetActiveWorkspace().cycleFrameLeft()
-			wm.GetActiveScreen().updateTitleBars()
-
-		case XK_n:
-			fmt.Println("nextworkspace")
-			wm.GetActiveWorkspace().cycleFrameRight()
-			wm.GetActiveScreen().updateTitleBars()
-		}
-	}
-
-	if mode == M_Client {
-		switch sym {
-		case XK_n:
-			wm.GetActiveFrame().cycleClientRight()
-		case XK_p:
-			wm.GetActiveFrame().cycleClientLeft()
-		}
-	}
-
-	/*
-
-
-
-			case XK_Up:
-				wm.GetActiveFrame().cycleClientLeft()
-				for _, s := range wm.Screens {
-					for _, ws := range s.Workspaces {
-						ws.updateTitleBars()
-					}
-				}
-
-			case XK_Down:
-				wm.GetActiveFrame().cycleClientRight()
-				for _, s := range wm.Screens {
-					for _, ws := range s.Workspaces {
-						ws.updateTitleBars()
-					}
-				}
-
-			}
-		}
-	*/
-
-	/*
-			case km.Keycode("LeftArrow"):
-				old := wm.GetActiveWorkspace()
-				new := wm.GetActiveScreen().cycleWorkspaceLeft()
-				if old != nil && old != new {
-					new.Map()
-					old.Unmap()
-				}
-
-			case km.Keycode("RightArrow"):
-				old := wm.GetActiveWorkspace()
-				new := wm.GetActiveScreen().cycleWorkspaceRight()
-				if old != nil && old != new {
-					new.Map()
-					old.Unmap()
-				}
-
-		}
-
-	*/
-
-	return false
+	return wm.handleBinding(sym, mods&xproto.ModMaskShift != 0)
 }
 
 type Geometry struct {

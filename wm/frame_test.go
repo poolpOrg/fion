@@ -339,7 +339,7 @@ func TestTabAt(t *testing.T) {
 		newTestClient(t, wm)
 	}
 	w := f.tabWidth()
-	for x, want := range map[int16]int{0: 0, int16(w - 1): 0, int16(w): 1, int16(4*w - 1): 3, int16(4 * w): -1, -1: -1} {
+	for x, want := range map[int16]int{0: 0, int16(w - 1): 0, int16(w): 1, int16(4*w - 1): 3, int16(4 * w): 3, int16(f.g.W) - 2: -1, -1: -1} {
 		if got := f.tabAt(x); got != want {
 			t.Errorf("tabAt(%d) = %d, want %d (tab width %d)", x, got, want, w)
 		}
@@ -363,5 +363,50 @@ func TestWorkspacePosition(t *testing.T) {
 	}
 	if sc, w, n := first.position(); sc != 1 || w != 1 || n != 2 {
 		t.Fatalf("first workspace at %d:%d/%d, want 1:1/2", sc, w, n)
+	}
+}
+
+// TestDecorationsFit checks that title bars and clients fill their frames
+// exactly, their borders included.
+func TestDecorationsFit(t *testing.T) {
+	wm := newTestManager(t)
+	ws := wm.GetActiveWorkspace()
+	a := newTestClient(t, wm)
+	if err := ws.splitV(); err != nil {
+		t.Fatal(err)
+	}
+	b := newTestClient(t, wm)
+	newTestClient(t, wm) // a second tab on the right
+	drainEvents(t, wm)
+	right := ws.ActiveFrame
+	left := ws.Root.children[0]
+
+	outer := func(win xproto.Window) (x, y, w, h int) {
+		t.Helper()
+		g, err := xproto.GetGeometry(wm.Conn(), xproto.Drawable(win)).Reply()
+		if err != nil {
+			t.Fatal(err)
+		}
+		bw := 2 * int(g.BorderWidth)
+		return int(g.X), int(g.Y), int(g.Width) + bw, int(g.Height) + bw
+	}
+	for _, tc := range []struct {
+		f      *Frame
+		client xproto.Window
+	}{{left, a}, {right, b}} {
+		if _, _, w, h := outer(tc.f.titleBar); w != int(tc.f.g.W) || h != titleH() {
+			t.Errorf("title bar %dx%d with its border, want %dx%d", w, h, tc.f.g.W, titleH())
+		}
+		if x, y, w, h := outer(tc.client); x != 0 || y != titleH() || w != int(tc.f.g.W) || y+h != int(tc.f.g.H) {
+			t.Errorf("client at %d,%d %dx%d with its border, want 0,%d %dx%d", x, y, w, h, titleH(), tc.f.g.W, int(tc.f.g.H)-titleH())
+		}
+	}
+
+	// the last tab reaches the end of the bar
+	if i := right.tabAt(int16(right.g.W) - 3); i != len(right.clients)-1 {
+		t.Errorf("tab at the bar's end is %d, want the last, %d", i, len(right.clients)-1)
+	}
+	if i := right.tabAt(int16(right.g.W) - 2); i != -1 {
+		t.Errorf("tab past the bar's end is %d", i)
 	}
 }
