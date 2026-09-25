@@ -410,3 +410,21 @@ func TestDecorationsFit(t *testing.T) {
 		t.Errorf("tab past the bar's end is %d", i)
 	}
 }
+
+func TestRemoveWorkspaceKeepsActive(t *testing.T) {
+	wm := newTestManager(t)
+	s := wm.GetActiveScreen()
+	for range 2 {
+		if err := wm.createWorkspace(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// the second of three, then the next one shows
+	wm.switchWorkspace(-1)
+	third := s.Workspaces[2]
+	s.removeWorkspace()
+	if len(s.Workspaces) != 2 || s.GetActiveWorkspace() != third {
+		t.Fatalf("after removing the second workspace, the active one is %d of %d, not the one shown",
+			s.activeWorkspaceIdx, len(s.Workspaces))
+	}
+}

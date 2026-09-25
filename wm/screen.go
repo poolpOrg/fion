@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -211,10 +212,8 @@ func (s *Screen) removeWorkspace() {
 	}
 
 	s.Workspaces = workspaces
-
-	if s.activeWorkspaceIdx >= len(s.Workspaces) {
-		s.activeWorkspaceIdx = 0
-	}
+	// the one shown, whose place moved with the removal
+	s.activeWorkspaceIdx = slices.Index(s.Workspaces, new)
 
 	new.Map()
 	old.Destroy()
