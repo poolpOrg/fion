@@ -32,9 +32,10 @@ const (
 	XK_Right xproto.Keysym = 0xFF53
 	XK_Down  xproto.Keysym = 0xFF54
 
-	XK_Space xproto.Keysym = 0x0020
-	XK_Plus  xproto.Keysym = 0x002B // '+'
-	XK_Minus xproto.Keysym = 0x002D // '-'
+	XK_Space    xproto.Keysym = 0x0020
+	XK_question xproto.Keysym = 0x003F
+	XK_Plus     xproto.Keysym = 0x002B // '+'
+	XK_Minus    xproto.Keysym = 0x002D // '-'
 
 	XK_A xproto.Keysym = 0x0041
 	XK_B xproto.Keysym = 0x0042
@@ -171,11 +172,6 @@ func (k *KeyboardManager) Conn() *xgb.Conn {
 	return k.wm.xConn
 }
 
-// grabbed on every root, whatever the window under the pointer: the
-// prefixes, closing, the scratchpad, the launcher, the system panel, the
-// terminal and quit, all with Mod
-var boundKeys = []xproto.Keysym{XK_w, XK_f, XK_t, XK_d, XK_s, XK_Space, XK_Return, XK_F2, XK_Escape}
-
 // GrabBindings (re)establishes the passive grabs for the bindings on every
 // root. Grabs are held on keycodes, so they must be redone when the keyboard
 // mapping changes.
@@ -183,11 +179,21 @@ func (k *KeyboardManager) GrabBindings() {
 	for _, scr := range k.wm.Screens {
 		root := scr.Info().Root
 		xproto.UngrabKey(k.Conn(), xproto.GrabAny, root, xproto.ModMaskAny)
-		for _, sym := range boundKeys {
-			if err := k.GrabSym(root, sym, k.Mod); err != nil {
+		grab := func(sym xproto.Keysym, mods uint16) {
+			if err := k.GrabSym(root, sym, mods); err != nil {
 				log.Printf("grab %s+0x%x: %v", k.ModName, uint32(sym), err)
 			}
 		}
+		for _, b := range bindings {
+			mods := k.Mod
+			if b.shift {
+				mods |= xproto.ModMaskShift
+			}
+			grab(b.sym, mods)
+		}
+		grab(XK_Escape, k.Mod)
+		// wherever the layout puts it, Shift included when it needs it
+		grab(XK_question, k.Mod)
 	}
 }
 
@@ -475,5 +481,10 @@ func (km *KeyboardManager) eventKeysym(kc xproto.Keycode, state uint16) xproto.K
 		}
 	}
 
-	return rep.Keysyms[base+col]
+	// a key without a symbol in that column has its first one, as when
+	// Shift is held on an arrow
+	if sym := rep.Keysyms[base+col]; sym != 0 {
+		return sym
+	}
+	return rep.Keysyms[base]
 }

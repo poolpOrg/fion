@@ -249,9 +249,10 @@ func (f *Frame) childGeometries() (Geometry, Geometry) {
 		Geometry{X: 0, Y: int16(h), W: f.g.W, H: f.g.H - h}
 }
 
-// split turns the leaf f into a split frame holding two new leaves: the
-// first one takes over f's clients, the second one becomes active.
-func (f *Frame) split(vertical bool) error {
+// split turns the leaf f into a split frame holding two new leaves, side
+// by side when vertical, stacked otherwise: one takes over f's clients, the
+// other, the first when newFirst, is empty and becomes active.
+func (f *Frame) split(vertical, newFirst bool) error {
 	if f.floating() {
 		return fmt.Errorf("the scratchpad can't be split")
 	}
@@ -274,36 +275,40 @@ func (f *Frame) split(vertical bool) error {
 		return err
 	}
 
+	keep, fresh := f1, f2
+	if newFirst {
+		keep, fresh = f2, f1
+	}
 	for _, client := range f.clients {
 		if c, ok := f.wm().Clients[client]; ok {
-			c.frame = f1
+			c.frame = keep
 			// reparenting a mapped window unmaps it first
 			if c.mapped {
 				c.ignoreUnmap++
 			}
 		}
-		xproto.ReparentWindow(f.Conn(), client, f1.window, 0, int16(titleH()))
+		xproto.ReparentWindow(f.Conn(), client, keep.window, 0, int16(titleH()))
 	}
-	f1.clients, f1.activeClient = f.clients, f.activeClient
+	keep.clients, keep.activeClient = f.clients, f.activeClient
 	f.clients, f.activeClient = nil, -1
 
 	f.leaf = false
 	f.children = []*Frame{f1, f2}
-	f1.layout()
+	keep.layout()
 	f1.Map()
 	f2.Map()
 
-	f.workspace.ActiveFrame = f2
+	f.workspace.ActiveFrame = fresh
 	f.workspace.updateTitleBars()
 	return nil
 }
 
 func (f *Frame) splitH() error {
-	return f.split(false)
+	return f.split(false, false)
 }
 
 func (f *Frame) splitV() error {
-	return f.split(true)
+	return f.split(true, false)
 }
 
 // AddTab adds a client to the leaf f as its active tab.

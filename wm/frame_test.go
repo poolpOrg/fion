@@ -371,7 +371,6 @@ func TestWorkspacePosition(t *testing.T) {
 func TestDecorationsFit(t *testing.T) {
 	wm := newTestManager(t)
 	ws := wm.GetActiveWorkspace()
-	left := ws.ActiveFrame
 	a := newTestClient(t, wm)
 	if err := ws.splitV(); err != nil {
 		t.Fatal(err)
@@ -380,7 +379,7 @@ func TestDecorationsFit(t *testing.T) {
 	newTestClient(t, wm) // a second tab on the right
 	drainEvents(t, wm)
 	right := ws.ActiveFrame
-	left = ws.Root.children[0]
+	left := ws.Root.children[0]
 
 	outer := func(win xproto.Window) (x, y, w, h int) {
 		t.Helper()
