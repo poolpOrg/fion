@@ -17,9 +17,10 @@ import (
 )
 
 // Print, without Mod, offers to capture the screen: a screenshot, saved as
-// a PNG, or a video, recorded with ffmpeg until Print is pressed again, of
-// the active tab, its frame, or the whole workspace. Captures are saved in
-// $XDG_PICTURES_DIR, or ~/Pictures, or the home directory.
+// a PNG, or a video, recorded with ffmpeg until Print is pressed again, as
+// an MP4 or a GIF, of the active tab, its frame, or the whole workspace.
+// Captures are saved in $XDG_PICTURES_DIR, or ~/Pictures, or the home
+// directory.
 
 const XK_Print xproto.Keysym = 0xFF61
 
@@ -176,14 +177,33 @@ type recording struct {
 	path    string
 	started time.Time
 	done    chan error
+	gif     bool // path is a temporary MP4, turned into a GIF once stopped
 }
 
-// startRecording records r until stopRecording.
-func (wm *Manager) startRecording(r rect) error {
+// gifArgs are the arguments turning the video in into the GIF out: 15
+// frames a second, 1280 pixels wide at most, with a palette of its own.
+func gifArgs(in, out string) []string {
+	return []string{
+		"-hide_banner", "-loglevel", "error", "-y", "-i", in,
+		"-vf", "fps=15,scale='min(1280,iw)':-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse",
+		out,
+	}
+}
+
+// startRecording records r until stopRecording, for a GIF when gif.
+func (wm *Manager) startRecording(r rect, gif bool) error {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return fmt.Errorf("recording needs ffmpeg")
 	}
 	path := capturePath(time.Now(), ".mp4")
+	if gif {
+		f, err := os.CreateTemp("", "fion-*.mp4")
+		if err != nil {
+			return err
+		}
+		f.Close()
+		path = f.Name()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -193,7 +213,7 @@ func (wm *Manager) startRecording(r rect) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	rec := &recording{cmd: cmd, path: path, started: time.Now(), done: make(chan error, 1)}
+	rec := &recording{cmd: cmd, path: path, started: time.Now(), done: make(chan error, 1), gif: gif}
 	go func() {
 		err := cmd.Wait()
 		if err != nil && stderr.Len() > 0 {
@@ -216,11 +236,39 @@ func (wm *Manager) stopRecording() (string, error) {
 		if _, statErr := os.Stat(rec.path); statErr != nil {
 			return "", fmt.Errorf("recording failed: %v", err)
 		}
+		if rec.gif {
+			wm.convertToGIF(rec.path, capturePath(rec.started, ".gif"))
+			return "", nil
+		}
 		return rec.path, nil
 	case <-time.After(5 * time.Second):
 		rec.cmd.Process.Kill()
 		return rec.path, fmt.Errorf("ffmpeg didn't stop, killed")
 	}
+}
+
+// convertToGIF turns the video in into the GIF out, away from the event
+// loop, removes in, and tells when done.
+func (wm *Manager) convertToGIF(in, out string) {
+	go func() {
+		var stderr strings.Builder
+		cmd := exec.Command("ffmpeg", gifArgs(in, out)...)
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		os.Remove(in)
+		done := func() {
+			if err != nil {
+				wm.alert("GIF: " + strings.TrimSpace(err.Error()+" "+stderr.String()))
+				return
+			}
+			wm.notice("Saved " + out)
+		}
+		if wm.later == nil {
+			done()
+			return
+		}
+		wm.later <- done
+	}()
 }
 
 // recordingFailed reports ffmpeg exiting on its own, and forgets the
@@ -250,19 +298,25 @@ func (wm *Manager) printScreen() error {
 			wm.notice("Video: " + err.Error())
 			return err
 		}
+		if path == "" {
+			wm.notice("Making the GIF...")
+			return nil
+		}
 		wm.notice("Saved " + path)
 		return nil
 	}
 
-	video := false
+	video, gif := false, false
 	problem := canRecord()
-	menu := "Capture: s a screenshot, v a video, any other key cancels"
+	menu := "Capture: s a screenshot, v a video, g a GIF, any other key cancels"
 	if problem != "" {
-		menu = "Capture: s a screenshot, v a video (unavailable: " + problem + "), any other key cancels"
+		menu = "Capture: s a screenshot, v a video or g a GIF (unavailable: " + problem + "), any other key cancels"
 	}
 	targets := func() string {
 		what := "Screenshot"
-		if video {
+		if gif {
+			what = "GIF"
+		} else if video {
 			what = "Video"
 		}
 		if _, hasTab, _, _ := wm.captureTargets(); hasTab {
@@ -278,12 +332,12 @@ func (wm *Manager) printScreen() error {
 	wm.mode = &keyMode{key: func(sym xproto.Keysym) bool {
 		if !chose {
 			switch {
-			case sym == XK_v && problem != "":
+			case (sym == XK_v || sym == XK_g) && problem != "":
 				// once the menu is gone, as it takes the prompt's place
 				wm.after(0, func() { wm.alert("Can't record: " + problem) })
 				return true
-			case sym == XK_s, sym == XK_v:
-				chose, video = true, sym == XK_v
+			case sym == XK_s, sym == XK_v, sym == XK_g:
+				chose, video, gif = true, sym != XK_s, sym == XK_g
 				p.setText(targets())
 				return false
 			}
@@ -302,16 +356,17 @@ func (wm *Manager) printScreen() error {
 			return true
 		}
 		// once the prompt is gone and what it covered is drawn again
-		wm.after(200*time.Millisecond, func() { wm.capture(r, video) })
+		wm.after(200*time.Millisecond, func() { wm.capture(r, video, gif) })
 		return true
 	}}
 	return nil
 }
 
-// capture takes a screenshot of r, or starts recording it.
-func (wm *Manager) capture(r rect, video bool) {
+// capture takes a screenshot of r, or starts recording it, for a GIF when
+// gif.
+func (wm *Manager) capture(r rect, video, gif bool) {
 	if video {
-		if err := wm.startRecording(r); err != nil {
+		if err := wm.startRecording(r, gif); err != nil {
 			wm.alert("Can't record: " + err.Error())
 		}
 		return
