@@ -244,38 +244,123 @@ type barText struct {
 	alert bool
 }
 
-func (ws *Workspace) updateInfoBar() {
-	clock := time.Now().Format(time.RFC1123)
+// barState is what the info bar shows, sampled once per update.
+type barState struct {
+	now                    time.Time
+	cores                  int
+	cpuPercent, memPercent float64 // -1 when unknown
+	memUsed, memTotal      uint64
+	load                   [3]float64
+	hasLoad                bool
+	battery                *batteryInfo
+	recording              time.Duration // -1 when not recording
+	position               string
+	system                 string
+}
 
-	// CPU, memory and load, alerts when past their thresholds
-	var resources []barText
-	cores, _ := cpu.Counts(true)
-	cpuPercent, memPercent, load1 := -1.0, -1.0, -1.0
-	if p, err := cpu.Percent(0, false); err == nil && len(p) > 0 {
-		cpuPercent = p[0]
-	}
-	vm, err := mem.VirtualMemory()
-	if err == nil {
-		memPercent = vm.UsedPercent
-	}
-	avg, loadErr := load.Avg()
-	if loadErr == nil {
-		load1 = avg.Load1
-	}
-	cpuAlert, memAlert, loadAlert := barAlerts(cpuPercent, memPercent, load1, cores)
-	if cpuPercent >= 0 {
-		resources = append(resources,
-			barText{s: fmt.Sprintf("CPU: % 4.02f%%", cpuPercent), alert: cpuAlert},
-			barText{s: fmt.Sprintf(" (%d cores) | ", cores)})
-	}
-	if memPercent >= 0 {
-		resources = append(resources, barText{s: fmt.Sprintf("MEM: % 4s / % 4s (%.02f%%)",
-			humanize.IBytes(vm.Used), humanize.IBytes(vm.Total), vm.UsedPercent), alert: memAlert},
+// the bar's forms, from the most detailed to the most compact, used by
+// how much fits the screen's width
+const barForms = 4
+
+// barPieces is the bar's text in form 0 to barForms-1: before the
+// operating system's icon, after it, and the clock on the right.
+func barPieces(st barState, form int) (before, after []barText, clock string) {
+	if st.recording >= 0 {
+		d := st.recording.Round(time.Second)
+		before = append(before, barText{s: fmt.Sprintf("REC %d:%02d", int(d.Minutes()), int(d.Seconds())%60), alert: true},
 			barText{s: " | "})
 	}
-	if loadErr == nil {
-		resources = append(resources, barText{s: fmt.Sprintf("LOAD: %.2f %.2f %.2f", avg.Load1, avg.Load5, avg.Load15),
-			alert: loadAlert})
+	before = append(before, barText{s: st.position + " | "})
+
+	if form < 3 {
+		after = append(after, barText{s: st.system + " | "})
+	}
+	cpuAlert, memAlert, loadAlert := barAlerts(st.cpuPercent, st.memPercent, st.load[0], st.cores)
+	if st.cpuPercent >= 0 {
+		switch {
+		case form == 0:
+			after = append(after, barText{s: fmt.Sprintf("CPU: % 4.02f%%", st.cpuPercent), alert: cpuAlert},
+				barText{s: fmt.Sprintf(" (%d cores) | ", st.cores)})
+		case form == 1:
+			after = append(after, barText{s: fmt.Sprintf("CPU: % 4.02f%%", st.cpuPercent), alert: cpuAlert}, barText{s: " | "})
+		default:
+			after = append(after, barText{s: fmt.Sprintf("CPU: %.0f%%", st.cpuPercent), alert: cpuAlert}, barText{s: " | "})
+		}
+	}
+	if st.memPercent >= 0 {
+		m := fmt.Sprintf("MEM: % 4s / % 4s (%.02f%%)", humanize.IBytes(st.memUsed), humanize.IBytes(st.memTotal), st.memPercent)
+		if form >= 2 {
+			m = fmt.Sprintf("MEM: %.0f%%", st.memPercent)
+		}
+		after = append(after, barText{s: m, alert: memAlert}, barText{s: " | "})
+	}
+	if st.hasLoad {
+		l := fmt.Sprintf("LOAD: %.2f %.2f %.2f", st.load[0], st.load[1], st.load[2])
+		if form >= 2 {
+			l = fmt.Sprintf("LOAD: %.2f", st.load[0])
+		}
+		after = append(after, barText{s: l, alert: loadAlert})
+	}
+	if st.battery != nil {
+		after = append(after, barText{s: " | "}, barText{s: formatBattery(*st.battery), alert: batteryAlert(*st.battery)})
+	}
+	clock = st.now.Format(time.RFC1123)
+	if form >= 1 {
+		clock = st.now.Format("Mon 2 Jan 15:04")
+	}
+	return before, after, clock
+}
+
+func (ws *Workspace) sampleBar() barState {
+	st := barState{now: time.Now(), cpuPercent: -1, memPercent: -1, recording: -1}
+	st.cores, _ = cpu.Counts(true)
+	if p, err := cpu.Percent(0, false); err == nil && len(p) > 0 {
+		st.cpuPercent = p[0]
+	}
+	if vm, err := mem.VirtualMemory(); err == nil {
+		st.memPercent, st.memUsed, st.memTotal = vm.UsedPercent, vm.Used, vm.Total
+	}
+	if avg, err := load.Avg(); err == nil {
+		st.load, st.hasLoad = [3]float64{avg.Load1, avg.Load5, avg.Load15}, true
+	}
+	if b, ok := readBattery(); ok {
+		st.battery = &b
+	}
+	if rec := ws.Manager.recording; rec != nil {
+		st.recording = time.Since(rec.started)
+	}
+	screen, workspace, count := ws.position()
+	st.position = fmt.Sprintf("[%02x:%02x/%02x]", screen, workspace, count)
+	st.system = thisOS().String()
+	return st
+}
+
+func textWidth(ts []barText) int {
+	n := 0
+	for _, t := range ts {
+		n += len(t.s)
+	}
+	return n * barFont.charW
+}
+
+func (ws *Workspace) updateInfoBar() {
+	st := ws.sampleBar()
+	width := int(ws.Screen.Geometry().W)
+	system := thisOS()
+	icon, hasIcon := ws.Screen.iconPixmap(system.kind, colorBar)
+	iconW := 0
+	if hasIcon {
+		iconW = icon.w + 4
+	}
+
+	// the most detailed form that fits, a space before the clock
+	var before, after []barText
+	var clock string
+	for form := range barForms {
+		before, after, clock = barPieces(st, form)
+		if 4+textWidth(before)+iconW+textWidth(after)+(len(clock)+3)*barFont.charW <= width {
+			break
+		}
 	}
 
 	conn, bar := ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow)
@@ -301,34 +386,20 @@ func (ws *Workspace) updateInfoBar() {
 		}
 		return x + len(s)*barFont.charW
 	}
-	image := func(x int, img logoImage) int {
-		xproto.CopyArea(conn, xproto.Drawable(img.pixmap), bar, ws.Screen.logoGC,
-			0, 0, int16(x), int16((infoBarInnerH()-img.h)/2), uint16(img.w), uint16(img.h))
-		return x + img.w
-	}
 
-	// recording, then where we are, then the operating system
 	x := 4
-	if rec := ws.Manager.recording; rec != nil {
-		d := time.Since(rec.started).Round(time.Second)
-		x = text(x, barText{s: fmt.Sprintf("REC %d:%02d", int(d.Minutes()), int(d.Seconds())%60), alert: true})
-		x = text(x, barText{s: " | "})
-	}
-	screen, workspace, count := ws.position()
-	x = text(x, barText{s: fmt.Sprintf("[%02x:%02x/%02x] | ", screen, workspace, count)})
-	system := thisOS()
-	if img, ok := ws.Screen.iconPixmap(system.kind, colorBar); ok {
-		x = image(x, img) + 4
-	}
-	x = text(x, barText{s: system.String() + " | "})
-	for _, t := range resources {
+	for _, t := range before {
 		x = text(x, t)
 	}
-	if b, ok := readBattery(); ok {
-		x = text(x, barText{s: " | "})
-		text(x, barText{s: formatBattery(b), alert: batteryAlert(b)})
+	if hasIcon {
+		xproto.CopyArea(conn, xproto.Drawable(icon.pixmap), bar, ws.Screen.logoGC,
+			0, 0, int16(x), int16((infoBarInnerH()-icon.h)/2), uint16(icon.w), uint16(icon.h))
+		x += iconW
 	}
-	text(int(ws.Screen.Geometry().W)-(len(clock)+1)*barFont.charW, barText{s: clock})
+	for _, t := range after {
+		x = text(x, t)
+	}
+	text(width-(len(clock)+1)*barFont.charW, barText{s: clock})
 }
 
 func (ws *Workspace) updateTitleBars() {
