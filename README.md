@@ -1,13 +1,25 @@
-# fion
-
-![](assets/fion.jpg)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png">
+    <img alt="fion" src="assets/logo-light.png" width="420">
+  </picture>
+</p>
 
 fion is a static tiling window manager for X11, inspired by
 [ion](https://tuomov.iki.fi/software/ion/), written in Go on top of
 [xgb](https://github.com/jezek/xgb).
 
-**This is a work in progress: it runs, but it is not usable as a daily
-window manager yet.**
+It is young: it runs, but expect rough edges, and see the known
+limitations below.
+
+| | |
+|:-:|:-:|
+| ![frames and tabs](assets/screenshots/tabs.png) | ![the scratchpad](assets/screenshots/scratchpad.png) |
+| frames split in tabs | the scratchpad, over them |
+| ![the launcher](assets/screenshots/launcher.png) | ![the cheat sheet](assets/screenshots/cheatsheet.png) |
+| the launcher | the cheat sheet, `Super+?` |
+| ![the system panel](assets/screenshots/panel.png) | ![the CPU view](assets/screenshots/panel-cpu.png) |
+| the system panel | its CPU view |
 
 
 design
@@ -25,23 +37,34 @@ windows open in it, the tab bindings act on it and it has the keyboard
 focus.  It can't be split or removed.  To fill it, show it and start
 windows, `Super+t` for a terminal, or drag tabs onto it.
 
+`Super+f` shows the active tab full screen, over the bar and the other
+frames, and `Super+f` again puts it back in its frame; any other binding,
+or a new window, puts it back first.
+
 A bar at the bottom of each workspace shows the screen and workspace
 numbers, the operating system with a small icon of its own, as
 `OpenBSD/7.9 (arm64)`, CPU and memory usage, the load average and the
 time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
 the load average above the number of CPUs.  On laptops it also shows the
 battery's charge, its time left, or whether it is charging when plugged
-in, in bold red from 15% on battery.  Clicking the bar, or
-`Super+s`, expands it into a panel, refreshed every second.  Its summary
-shows the machine's hardware, the use and temperature of each CPU, the
-GPUs, the memory, the filesystems' usage, and every disk's and network
-interface's throughput, idle ones marked rather than hidden.  `Tab`, the
-arrows or `1` to `6` switch to its CPU, Memory, Disk, Network and Sensors
-views, with graphs of the time it has been shown, the last ten minutes at
-most; `Escape` closes it.
+in, in bold red from 15% on battery.  On narrower screens it shortens
+what it shows to fit: a shorter clock, the percentages alone, the
+system's icon without its name.
+
+Clicking the bar, or `Super+s`, opens a panel above it, refreshed every
+second, the frames shrinking to fit above it until it is closed.  Its
+summary shows the machine's hardware, the use and temperature of each
+CPU, the GPUs, the memory, the filesystems' usage, and every disk's and
+network interface's throughput, idle ones marked rather than hidden, in
+as many columns as the screen's width holds.  `Tab`, the arrows or `1` to
+`6` switch to its CPU, Memory, Disk, Network and Sensors views, with
+graphs of the time it has been shown, the last ten minutes at most;
+`Escape` closes it.
 
 Empty frames are black; a workspace that is a single empty frame shows the
-fion logo, centered.
+fion logo, centered:
+
+![an empty workspace](assets/screenshots/empty.png)
 
 fion uses the [Dracula](https://draculatheme.com) colors, and adds them for
 xterm to the display's resource database when it starts, along with UTF-8
@@ -72,6 +95,7 @@ in a cheat sheet:
 | `Super+Shift+` an arrow         | split: new frame on that side            |
 | `Super+Page Down` / `Page Up`   | next / previous workspace                |
 | `Super+w`                       | new workspace                            |
+| `Super+f`                       | show the active tab full screen / back   |
 | `Super+d`, then `d`             | close what has the focus: the active window, asked to close first and killed when it didn't, an empty frame, or a workspace that is a single empty frame but for the last one. `Super+d` asks: `d` confirms, any other key cancels |
 | `Super++` / `Super+-`           | resize the active frame, growing / shrinking: then the arrows move its edge on that side, `+` and `-` switch, `Return` confirms, `Escape` cancels |
 | `Super+m`                       | move the scratchpad: then the arrows move it, `Return` confirms, `Escape` cancels; its place and size are kept for the next time |
@@ -104,8 +128,10 @@ default.
 
 fion draws its text with the fixed font at a size for the screen: 13
 pixels below 1000 lines, 15 up to 1400, 18 up to 1800, 20 above, and
-the bars, tabs and panels grow with it, as does xterm's font.  Set
-`FION_FONT` to 13, 15, 18 or 20 to pick a size, or to a core font's name.
+the bars, tabs and panels grow with it, as does xterm's font.  The bar
+at the bottom uses the next size up, 12x24 above 20.  Set `FION_FONT`
+to 13, 15, 18 or 20 to pick a size, or to a core font's name, which the
+bar uses too.
 
 Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
 modifier than Super.
@@ -137,15 +163,13 @@ by `FION_TEST_DISPLAY`; they are skipped otherwise:
 
 known limitations
 --
-- input focus is only given to the scratchpad; elsewhere it follows the
-  pointer
+- input focus is only given to the scratchpad and to a tab shown full
+  screen; elsewhere it follows the pointer
 - windows can only be moved between frames with the mouse
-- splitting halves a frame, frames can't be resized
 - every window gets a tab, dialogs and transient windows included
-- ConfigureRequest events are ignored
+- ConfigureRequest events are ignored, and clients can't ask to be shown
+  full screen themselves
 - only the X screens are handled, not RandR outputs: on a multi-monitor
   setup a workspace spans all the monitors
-- after removing a workspace, the one marked active may not be the one
-  shown
 - tab titles are read from `WM_NAME` only, UTF-8 titles show empty
 - EWMH support is limited to announcing the window manager
