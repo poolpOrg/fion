@@ -74,10 +74,11 @@ func newSysPanel(s *Screen) (*sysPanel, error) {
 	}
 	plain, _ := font("fixed")
 	p.gc = newGC(plain)
+	// the plain font is closed once in its GC: share that GC when the bold
+	// font is missing
+	p.boldGC = p.gc
 	if bold, ok := font("-misc-fixed-bold-r-semicondensed--13-120-75-75-c-60-iso8859-1"); ok {
 		p.boldGC = newGC(bold)
-	} else {
-		p.boldGC = newGC(plain)
 	}
 	return p, nil
 }
