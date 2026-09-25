@@ -10,10 +10,13 @@ import "github.com/jezek/xgb/xproto"
 
 const scratchpadW, scratchpadH = 640, 480
 
-// scratchpadGeometry centers the scratchpad, 1px border included, on the
-// screen.
+// scratchpadGeometry is where the scratchpad was last put, or centered on
+// the screen, 1px border included.
 func (s *Screen) scratchpadGeometry() Geometry {
 	g := s.Geometry()
+	if saved, ok := savedScratchpad(int(g.W), int(g.H)); ok {
+		return saved
+	}
 	w, h := min(uint16(scaled(scratchpadW)), g.W-2), min(uint16(scaled(scratchpadH)), g.H-2)
 	return Geometry{
 		X: int16((g.W - w - 2) / 2),

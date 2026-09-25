@@ -69,6 +69,8 @@ in a cheat sheet:
 | `Super+Page Down` / `Page Up`   | next / previous workspace                |
 | `Super+w`                       | new workspace                            |
 | `Super+d`, then `d`             | close what has the focus: the active window, asked to close first and killed when it didn't, an empty frame, or a workspace that is a single empty frame but for the last one. `Super+d` asks: `d` confirms, any other key cancels |
+| `Super++` / `Super+-`           | resize the active frame, growing / shrinking: then the arrows move its edge on that side, `+` and `-` switch, `Return` confirms, `Escape` cancels |
+| `Super+m`                       | move the scratchpad: then the arrows move it, `Return` confirms, `Escape` cancels; its place and size are kept for the next time |
 | `Super+Return`                  | open the launcher                        |
 | `Super+space`                   | show / hide the scratchpad               |
 | `Super+s`                       | show / hide the system panel, as clicking the bar does |

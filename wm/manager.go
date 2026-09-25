@@ -38,6 +38,9 @@ type Manager struct {
 
 	// created the first time Mod+? shows it
 	cheat *cheatSheet
+
+	// resizing or moving, nil when neither
+	mode *keyMode
 }
 
 func NewManager() (*Manager, error) {
@@ -416,8 +419,8 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.drawCheatSheet()
 			break
 		}
-		if wm.confirm != nil && ev.Window == wm.confirm.window {
-			wm.drawPrompt()
+		if p := wm.GetActiveScreen().prompt; p != nil && p.shown && ev.Window == p.window {
+			p.draw()
 			break
 		}
 		if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Window == p.window {
@@ -581,6 +584,10 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	}
 	if wm.cheatSheetShown() {
 		wm.cheatSheetKey(ev)
+		return false
+	}
+	if wm.mode != nil {
+		wm.modeKey(ev)
 		return false
 	}
 
