@@ -219,3 +219,27 @@ func (s *Screen) removeWorkspace() {
 	new.Map()
 	old.Destroy()
 }
+
+// workAreaH is the height the workspaces' frames take: the screen's but
+// for the info bar at the bottom, and the panel above it when shown.
+func (s *Screen) workAreaH() int {
+	h := int(s.Geometry().H) - infoBarOuterH()
+	if s.panel != nil && s.panel.shown {
+		h -= s.panel.h
+	}
+	return h
+}
+
+// layoutWorkspaces fits the workspaces' frames to the work area.
+func (s *Screen) layoutWorkspaces() {
+	h := uint16(s.workAreaH())
+	for _, ws := range s.Workspaces {
+		if ws.Root == nil || ws.Root.g.H == h {
+			continue
+		}
+		ws.Root.g.H = h
+		ws.Root.layout()
+		// the logo, centered again
+		xproto.ClearArea(s.Conn(), true, ws.Root.window, 0, 0, 0, 0)
+	}
+}
