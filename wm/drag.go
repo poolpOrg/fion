@@ -44,7 +44,7 @@ func (wm *Manager) beginTabDrag(f *Frame, ev xproto.ButtonPressEvent) {
 		client: f.clients[i],
 		startX: ev.RootX,
 		startY: ev.RootY,
-		w:      uint16(min(f.tabWidth(), 200)),
+		w:      uint16(min(f.tabWidth(), scaled(200))),
 	}
 }
 
@@ -74,7 +74,7 @@ func (wm *Manager) createDragWindow(d *tabDrag) error {
 		return err
 	}
 	xproto.CreateWindow(wm.Conn(), scr.RootDepth, w, scr.Root,
-		d.startX+8, d.startY+8, d.w, 20, 1,
+		d.startX+8, d.startY+8, d.w, uint16(titleH()-2), 1,
 		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask,
 		[]uint32{colorAccent, colorBorder, xproto.EventMaskExposure})
@@ -87,13 +87,13 @@ func (wm *Manager) createDragWindow(d *tabDrag) error {
 func (wm *Manager) drawDragWindow() {
 	d := wm.drag
 	title := getWindowName(wm.Conn(), d.client)
-	if n := (int(d.w) - 8) / fixedCharWidth; len(title) > n {
+	if n := (int(d.w) - 8) / charW(); len(title) > n {
 		title = title[:max(n, 0)]
 	}
 	gc := d.frame.barGC
 	xproto.ChangeGC(wm.Conn(), gc, xproto.GcForeground|xproto.GcBackground,
 		[]uint32{colorAccentText, colorAccent})
-	xproto.ImageText8(wm.Conn(), byte(len(title)), xproto.Drawable(d.window), gc, 4, 14, title)
+	xproto.ImageText8(wm.Conn(), byte(len(title)), xproto.Drawable(d.window), gc, 4, int16(baseline(titleH()-2)), title)
 }
 
 // endTabDrag drops the dragged tab where the button was released.
@@ -115,7 +115,7 @@ func (wm *Manager) endTabDrag(ev xproto.ButtonReleaseEvent) {
 	}
 	// dropped on a title bar, the tab goes where it was dropped
 	index := -1
-	if y < 22 {
+	if int(y) < titleH() {
 		index = target.tabAt(x)
 	}
 	if err := wm.moveClient(d.client, target, index); err != nil {
@@ -181,7 +181,7 @@ func (wm *Manager) moveClient(win xproto.Window, target *Frame, index int) error
 		if c.mapped {
 			c.ignoreUnmap++
 		}
-		xproto.ReparentWindow(wm.Conn(), win, target.window, 0, 22)
+		xproto.ReparentWindow(wm.Conn(), win, target.window, 0, int16(titleH()))
 		c.frame = target
 	}
 

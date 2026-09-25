@@ -25,11 +25,13 @@ windows open in it, the tab bindings act on it and it has the keyboard
 focus.  It can't be split or removed.  To fill it, show it and start
 windows, `Super+F2` for a terminal, or drag tabs onto it.
 
-A bar at the bottom of each workspace shows the fion logo, the screen and
-workspace numbers, the operating system with a small icon of its own, as
+A bar at the bottom of each workspace shows the screen and workspace
+numbers, the operating system with a small icon of its own, as
 `OpenBSD/7.9 (arm64)`, CPU and memory usage, the load average and the
 time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
-the load average above the number of CPUs.  Clicking the bar, or
+the load average above the number of CPUs.  On laptops it also shows the
+battery's charge, its time left, or whether it is charging when plugged
+in, in bold red from 15% on battery.  Clicking the bar, or
 `Super+s`, expands it into a panel with the machine's hardware, the use
 and temperature of each CPU, the GPUs, the memory, and the disk and
 network throughput, refreshed every second.
@@ -89,6 +91,11 @@ open once they exit, until `Return`: fion tells them from the libraries
 they are linked to, and desktop applications from their entries.  The history
 is kept in `$XDG_STATE_HOME/fion/history`, `~/.local/state/fion/history` by
 default.
+
+fion draws its text with the fixed font at a size for the screen: 13
+pixels below 1000 lines, 15 up to 1400, 18 up to 1800, 20 above, and
+the bars, tabs and panels grow with it, as does xterm's font.  Set
+`FION_FONT` to 13, 15, 18 or 20 to pick a size, or to a core font's name.
 
 Set `FION_MODIFIER` to `ctrl`, `alt` or `mod1` to `mod5` to use another
 modifier than Super.

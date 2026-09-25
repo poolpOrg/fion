@@ -102,7 +102,7 @@ func TestAMDGPUs(t *testing.T) {
 }
 
 func TestPanelFormatting(t *testing.T) {
-	if h := panelHeight(800, 14); h > 480 || h < 22*panelLineH {
+	if h := panelHeight(800, 14); h > 480 || h < 22*panelLineH() {
 		t.Fatalf("panel height %d for 14 cores on 800 pixels", h)
 	}
 	if h := panelHeight(800, 128); h != 480 {

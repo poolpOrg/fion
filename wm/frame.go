@@ -31,7 +31,7 @@ type Frame struct {
 func newRootFrame(ws *Workspace) (*Frame, error) {
 	geom := ws.Screen.Geometry()
 	// leave room for the info bar at the bottom
-	return newFrame(ws.Screen, ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - 20})
+	return newFrame(ws.Screen, ws, nil, Geometry{X: 0, Y: 0, W: geom.W, H: geom.H - uint16(infoBarOuterH())})
 }
 
 // newFrame creates an empty leaf frame at g inside parent, at the top of the
@@ -144,7 +144,7 @@ func (f *Frame) setuptitleBar() error {
 	xproto.CreateWindow(
 		f.Conn(), scr.RootDepth, w, f.window,
 		0, 0, // Position at the bottom
-		geom.W-4, 20, // Adjust height for top and bottom borders
+		geom.W-4, uint16(titleH()-2), // inside its border
 		1, // Set border width to 1px
 		xproto.WindowClassInputOutput, scr.RootVisual,
 		xproto.CwBackPixel|xproto.CwBorderPixel|xproto.CwEventMask, // Add CwBorderPixel
@@ -164,12 +164,11 @@ func (f *Frame) setuptitleBar() error {
 			colorBar,  // background, of the text drawn by ImageText8
 		},
 	)
-	// Load a core font and bind it to the GC
-	fid, _ := xproto.NewFontId(f.Conn())
-	_ = xproto.OpenFontChecked(f.Conn(), fid, uint16(len("fixed")), "fixed").Check()
-	xproto.ChangeGC(f.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
-	// the GC keeps the font alive, the id is no longer needed
-	xproto.CloseFont(f.Conn(), fid)
+	// bind the font; the GC keeps it alive, the id is no longer needed
+	if fid, ok := openFont(f.Conn(), font.plain); ok {
+		xproto.ChangeGC(f.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
+		xproto.CloseFont(f.Conn(), fid)
+	}
 	f.barGC = gc
 	f.wm().Frames[f.titleBar] = f
 
@@ -220,7 +219,7 @@ func (f *Frame) layout() {
 
 	for _, client := range f.clients {
 		xproto.ConfigureWindow(f.Conn(), client, mask,
-			[]uint32{0, 22, uint32(f.g.W), uint32(f.g.H) - 22})
+			[]uint32{0, uint32(titleH()), uint32(f.g.W), uint32(int(f.g.H) - titleH())})
 	}
 
 	if !f.leaf {
@@ -277,7 +276,7 @@ func (f *Frame) split(vertical bool) error {
 				c.ignoreUnmap++
 			}
 		}
-		xproto.ReparentWindow(f.Conn(), client, f1.window, 0, 22)
+		xproto.ReparentWindow(f.Conn(), client, f1.window, 0, int16(titleH()))
 	}
 	f1.clients, f1.activeClient = f.clients, f.activeClient
 	f.clients, f.activeClient = nil, -1
@@ -307,10 +306,7 @@ func (f *Frame) AddTab(win xproto.Window) {
 	f.selectClient(len(f.clients) - 1)
 }
 
-const (
-	// width of a character in the "fixed" core font
-	fixedCharWidth = 6
-)
+const ()
 
 // tabWidth is the width of each tab in the title bar.
 func (f *Frame) tabWidth() int {
@@ -342,7 +338,7 @@ func (f *Frame) updateTitleBar() {
 			s = s[:255]
 		}
 		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground|xproto.GcBackground, []uint32{fg, bg})
-		xproto.ImageText8(conn, byte(len(s)), bar, f.barGC, x, 14, s)
+		xproto.ImageText8(conn, byte(len(s)), bar, f.barGC, x, int16(baseline(titleH()-2)), s)
 	}
 
 	if len(f.clients) == 0 {
@@ -362,10 +358,10 @@ func (f *Frame) updateTitleBar() {
 		// a 1px gap between tabs
 		xproto.ChangeGC(conn, f.barGC, xproto.GcForeground, []uint32{bg})
 		xproto.PolyFillRectangle(conn, bar, f.barGC,
-			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(w-1, 1)), Height: 20}})
+			[]xproto.Rectangle{{X: x, Y: 0, Width: uint16(max(w-1, 1)), Height: uint16(titleH() - 2)}})
 
 		title := getWindowName(conn, client)
-		if n := (w - 8) / fixedCharWidth; len(title) > n {
+		if n := (w - 8) / charW(); len(title) > n {
 			title = title[:max(n, 0)]
 		}
 		text(x+4, title, fg, bg)

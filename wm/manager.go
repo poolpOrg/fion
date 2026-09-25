@@ -58,6 +58,7 @@ func NewManager() (*Manager, error) {
 		Clients: make(map[xproto.Window]*Client),
 	}
 	wm.KeyboardManager = NewKeyboardManager(wm)
+	loadFont(conn, int(setup.Roots[0].HeightInPixels))
 
 	if err := wm.initScreens(); err != nil {
 		wm.Close()
@@ -125,13 +126,13 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 		[]uint32{xproto.EventMaskStructureNotify | xproto.EventMaskPropertyChange})
 	xproto.ConfigureWindow(wm.Conn(), win, xproto.ConfigWindowBorderWidth, []uint32{bw})
 	xproto.ChangeSaveSet(wm.Conn(), xproto.SetModeInsert, win)
-	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, 20)
+	xproto.ReparentWindow(wm.Conn(), win, parentId, 0, int16(titleH()))
 
 	mask := uint16(xproto.ConfigWindowX |
 		xproto.ConfigWindowY |
 		xproto.ConfigWindowWidth |
 		xproto.ConfigWindowHeight)
-	vals := []uint32{0, 22, uint32(geom.Width), uint32(geom.Height) - 22}
+	vals := []uint32{0, uint32(titleH()), uint32(geom.Width), uint32(int(geom.Height) - titleH())}
 	xproto.ConfigureWindow(wm.Conn(), win, mask, vals)
 
 	//xproto.ChangeWindowAttributes(wm.Conn(), win, xproto.CwBorderPixel, []uint32{activeWorkspace.Color})

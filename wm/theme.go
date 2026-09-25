@@ -38,11 +38,14 @@ const (
 	colorLogo  = 0xffffff
 )
 
-// the info bar shows in bold red a CPU or memory use from these, and a
-// load average above the number of CPUs
+// the info bar shows in bold red a CPU or memory use from these, a load
+// average above the number of CPUs
 const (
 	alertCPUPercent = 80
 	alertMemPercent = 90
+
+	// and a battery at or below this, on battery
+	alertBatteryPercent = 15
 )
 
 // xtermResources are the Dracula colors for xterm, from Dracula's
@@ -53,9 +56,6 @@ const (
 var xtermResources = []string{
 	"XTerm*locale: false",
 	"XTerm*utf8: 2",
-	// the Unicode variant of the default font: some xterm builds, such as
-	// Homebrew's, otherwise pick one without braille or block elements
-	"XTerm*font: -misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1",
 	"XTerm*background: #282A36",
 	"XTerm*foreground: #F8F8F2",
 	"XTerm*cursorColor: #F8F8F2",
@@ -75,6 +75,13 @@ var xtermResources = []string{
 	"XTerm*color14: #9AEDFE",
 	"XTerm*color7: #BFBFBF",
 	"XTerm*color15: #E6E6E6",
+}
+
+// xtermTheme is xtermResources and the Unicode variant of fion's font:
+// xterm then matches fion's size, and some builds, such as Homebrew's,
+// otherwise pick a font without braille or block elements.
+func xtermTheme() []string {
+	return append([]string{"XTerm*font: " + font.unicode}, xtermResources...)
 }
 
 // resourceAttribute returns the last component of a resource line's name:
@@ -129,7 +136,7 @@ func (wm *Manager) installXtermTheme() {
 		return
 	}
 	database := string(r.Value[:r.ValueLen])
-	merged := mergeResources(database, xtermResources)
+	merged := mergeResources(database, xtermTheme())
 	if merged == database {
 		return
 	}
