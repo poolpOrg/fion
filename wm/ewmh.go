@@ -114,7 +114,20 @@ func (wm *Manager) handleClientMessage(ev xproto.ClientMessageEvent) {
 	switch ev.Type {
 	case a.NET_WM_STATE:
 		c, ok := wm.Clients[ev.Window]
-		if !ok || (xproto.Atom(data[1]) != a.NET_WM_STATE_FULLSCREEN && xproto.Atom(data[2]) != a.NET_WM_STATE_FULLSCREEN) {
+		if !ok {
+			return
+		}
+		if xproto.Atom(data[1]) == a.NET_WM_STATE_DEMANDS_ATTENTION || xproto.Atom(data[2]) == a.NET_WM_STATE_DEMANDS_ATTENTION {
+			switch data[0] {
+			case 0:
+				wm.setUrgent(ev.Window, false)
+			case 1:
+				wm.setUrgent(ev.Window, true)
+			case 2:
+				wm.setUrgent(ev.Window, !c.urgent)
+			}
+		}
+		if xproto.Atom(data[1]) != a.NET_WM_STATE_FULLSCREEN && xproto.Atom(data[2]) != a.NET_WM_STATE_FULLSCREEN {
 			return
 		}
 		s := c.frame.screen

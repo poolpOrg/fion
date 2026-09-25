@@ -257,6 +257,7 @@ type barState struct {
 	battery                *batteryInfo
 	recording              time.Duration // -1 when not recording
 	position               string
+	urgent                 string // the workspaces asking for attention
 	system                 string
 }
 
@@ -273,6 +274,9 @@ func barPieces(st barState, form int) (before, after []barText, clock string) {
 			barText{s: " | "})
 	}
 	before = append(before, barText{s: st.position + " | "})
+	if st.urgent != "" {
+		before = append(before, barText{s: st.urgent, alert: true}, barText{s: " | "})
+	}
 
 	if form < 3 {
 		after = append(after, barText{s: st.system + " | "})
@@ -333,6 +337,7 @@ func (ws *Workspace) sampleBar() barState {
 	}
 	screen, workspace, count := ws.position()
 	st.position = fmt.Sprintf("[%02x:%02x/%02x]", screen, workspace, count)
+	st.urgent = ws.Screen.urgentSummary()
 	st.system = thisOS().String()
 	return st
 }

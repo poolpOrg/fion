@@ -199,6 +199,7 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	frame.AddTab(win)
 	log.Printf("managing 0x%x", win)
 	wm.updateClientList()
+	wm.urgencyChanged(win)
 	if wm.wantsFullscreen(win) {
 		frame.screen.leaveFullscreen()
 		frame.screen.toggleFullscreen()
@@ -608,6 +609,9 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 			wm.KeyboardManager.MappingChanged()
 		}
 	case xproto.PropertyNotifyEvent:
+		if ev.Atom == xproto.AtomWmHints {
+			wm.urgencyChanged(ev.Window)
+		}
 		if name, _ := netWMName(wm.Conn()); ev.Atom == xproto.AtomWmName || ev.Atom == name {
 			if c, ok := wm.Clients[ev.Window]; ok {
 				c.frame.updateTitleBar()

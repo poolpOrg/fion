@@ -382,6 +382,9 @@ func (f *Frame) updateTitleBar() {
 				bg, fg = colorAccent, colorAccentText
 			}
 		}
+		if c, ok := f.wm().Clients[client]; ok && c.urgent {
+			bg, fg = colorAlert, colorAccentText
+		}
 		x := int16(i * w)
 		// a 1px gap between tabs, the last one taking what is left
 		tw := w - 1

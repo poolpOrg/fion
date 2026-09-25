@@ -39,6 +39,9 @@ func (wm *Manager) updateFocus() {
 	}
 	wm.focusClient(win)
 	wm.setActiveWindow(win)
+	if c, ok := wm.Clients[win]; ok && c.urgent {
+		wm.setUrgent(win, false)
+	}
 }
 
 // focusClient gives win the focus as ICCCM has it: set, unless its
