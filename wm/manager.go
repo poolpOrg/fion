@@ -391,7 +391,7 @@ func (wm *Manager) Run() error {
 
 		case <-ticker.C:
 			if err := wm.recordingFailed(); err != nil {
-				wm.notice("Video: " + err.Error())
+				wm.alert("Recording stopped: " + err.Error())
 			}
 			for _, s := range wm.Screens {
 				for _, ws := range s.Workspaces {
@@ -498,6 +498,9 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		if f, ok := wm.Frames[ev.Event]; ok && ev.Detail == 1 {
 			wm.clickTitleBar(f, ev.EventX)
 			wm.beginTabDrag(f, ev)
+		} else if p := wm.GetActiveScreen().panel; p != nil && p.shown && ev.Event == p.window &&
+			p.panelClick(int(ev.EventX), int(ev.EventY)) {
+			// a view's name
 		} else if wm.isInfoBar(ev.Event) && ev.Detail == 1 {
 			if err := wm.GetActiveScreen().togglePanel(); err != nil {
 				log.Printf("panel: %v", err)
@@ -606,6 +609,10 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 	}
 	if wm.mode != nil {
 		wm.modeKey(ev)
+		return false
+	}
+	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
+		wm.panelKey(ev)
 		return false
 	}
 

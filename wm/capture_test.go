@@ -140,3 +140,36 @@ func TestRecording(t *testing.T) {
 		t.Fatalf("video %v, %v", info, err)
 	}
 }
+
+func TestVideoProblem(t *testing.T) {
+	missing := func(string) (string, error) { return "", os.ErrNotExist }
+	found := func(string) (string, error) { return "/usr/local/bin/ffmpeg", nil }
+	with := func(s string) func() (string, error) { return func() (string, error) { return s, nil } }
+
+	if got := videoProblem(missing, with(""), "openbsd"); got != "videos need ffmpeg: pkg_add ffmpeg" {
+		t.Errorf("without ffmpeg: %q", got)
+	}
+	if got := videoProblem(found, with(" D  avfoundation\n"), "darwin"); !strings.Contains(got, "x11grab") {
+		t.Errorf("without x11grab: %q", got)
+	}
+	if got := videoProblem(found, with(" D  x11grab  X11 screen capture\n"), "openbsd"); got != "" {
+		t.Errorf("with x11grab: %q", got)
+	}
+}
+
+func TestVideoUnavailable(t *testing.T) {
+	if canRecord() == "" {
+		t.Skip("videos can be recorded here")
+	}
+	t.Setenv("XDG_PICTURES_DIR", t.TempDir())
+	wm := newTestManager(t)
+	press(t, wm, XK_Print, 0)
+	p := wm.GetActiveScreen().prompt
+	if !strings.Contains(p.text, "unavailable") {
+		t.Fatalf("capture menu %q doesn't say videos are unavailable", p.text)
+	}
+	press(t, wm, XK_v, 0)
+	if wm.mode != nil || wm.recording != nil {
+		t.Fatalf("v went on without ffmpeg")
+	}
+}

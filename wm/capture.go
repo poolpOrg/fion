@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +24,44 @@ import (
 const XK_Print xproto.Keysym = 0xFF61
 
 type rect struct{ x, y, w, h int }
+
+// videoProblem tells why videos can't be recorded, and how to fix it, ""
+// when they can: they need an ffmpeg that captures X, with x11grab.
+func videoProblem(lookPath func(string) (string, error), devices func() (string, error), goos string) string {
+	if _, err := lookPath("ffmpeg"); err != nil {
+		return "videos need ffmpeg: " + installHint(goos)
+	}
+	if out, err := devices(); err != nil || !strings.Contains(out, "x11grab") {
+		return "videos need an ffmpeg with x11grab: " + installHint(goos)
+	}
+	return ""
+}
+
+// installHint says how to install ffmpeg on a system.
+func installHint(goos string) string {
+	switch goos {
+	case "openbsd":
+		return "pkg_add ffmpeg"
+	case "freebsd":
+		return "pkg install ffmpeg"
+	case "netbsd":
+		return "pkgin install ffmpeg"
+	case "linux":
+		return "install your distribution's ffmpeg package"
+	case "darwin":
+		return "Homebrew's ffmpeg lacks it"
+	}
+	return "install ffmpeg"
+}
+
+// canRecord checks this system, each time, so that installing ffmpeg
+// takes without restarting fion.
+func canRecord() string {
+	return videoProblem(exec.LookPath, func() (string, error) {
+		out, err := exec.Command("ffmpeg", "-hide_banner", "-devices").Output()
+		return string(out), err
+	}, runtime.GOOS)
+}
 
 // captureTargets are the areas a capture may take, in root coordinates:
 // the active tab, when there is one, its frame, the workspace.
@@ -212,6 +251,11 @@ func (wm *Manager) printScreen() error {
 	}
 
 	video := false
+	problem := canRecord()
+	menu := "Capture: s a screenshot, v a video, any other key cancels"
+	if problem != "" {
+		menu = "Capture: s a screenshot, v a video (unavailable: " + problem + "), any other key cancels"
+	}
 	targets := func() string {
 		what := "Screenshot"
 		if video {
@@ -222,15 +266,19 @@ func (wm *Manager) printScreen() error {
 		}
 		return what + " of: f the frame, w the workspace, any other key cancels"
 	}
-	p, err := wm.showPrompt("Capture: s a screenshot, v a video, any other key cancels", colorAccent)
+	p, err := wm.showPrompt(menu, colorAccent)
 	if err != nil {
 		return err
 	}
 	chose := false
 	wm.mode = &keyMode{key: func(sym xproto.Keysym) bool {
 		if !chose {
-			switch sym {
-			case XK_s, XK_v:
+			switch {
+			case sym == XK_v && problem != "":
+				// once the menu is gone, as it takes the prompt's place
+				wm.after(0, func() { wm.alert("Can't record: " + problem) })
+				return true
+			case sym == XK_s, sym == XK_v:
 				chose, video = true, sym == XK_v
 				p.setText(targets())
 				return false
@@ -260,7 +308,7 @@ func (wm *Manager) printScreen() error {
 func (wm *Manager) capture(r rect, video bool) {
 	if video {
 		if err := wm.startRecording(r); err != nil {
-			wm.notice("Video: " + err.Error())
+			wm.alert("Can't record: " + err.Error())
 		}
 		return
 	}
@@ -286,6 +334,16 @@ func (wm *Manager) after(d time.Duration, f func()) {
 // notice shows a line at the top of the screen for a few seconds, without
 // taking the keyboard.
 func (wm *Manager) notice(text string) {
+	wm.showNotice(text, colorAccent, 3*time.Second)
+}
+
+// alert is a notice about what went wrong, in red and for longer.
+func (wm *Manager) alert(text string) {
+	log.Print(text)
+	wm.showNotice(text, colorAlert, 6*time.Second)
+}
+
+func (wm *Manager) showNotice(text string, color uint32, d time.Duration) {
 	s := wm.GetActiveScreen()
 	p, err := wm.promptWindow(s)
 	if err != nil || p.shown {
@@ -293,12 +351,12 @@ func (wm *Manager) notice(text string) {
 		return
 	}
 	p.text = text
-	xproto.ChangeWindowAttributes(wm.Conn(), p.window, xproto.CwBorderPixel, []uint32{colorAccent})
+	xproto.ChangeWindowAttributes(wm.Conn(), p.window, xproto.CwBorderPixel, []uint32{color})
 	p.place()
 	xproto.MapWindow(wm.Conn(), p.window)
 	p.draw()
 	p.noticeShown = true
-	wm.after(3*time.Second, func() {
+	wm.after(d, func() {
 		if p.noticeShown && !p.shown {
 			p.noticeShown = false
 			xproto.UnmapWindow(wm.Conn(), p.window)
