@@ -18,6 +18,7 @@ const (
 	kindCommand launchKind = iota // an executable in $PATH
 	kindApp                       // a desktop application
 	kindHistory                   // a command line run before
+	kindProject                   // a git repository, opened as a workspace
 )
 
 type launchItem struct {

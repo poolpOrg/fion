@@ -9,7 +9,7 @@ import (
 func TestNeedsTerminal(t *testing.T) {
 	l := newLauncher(launchItems(
 		[]desktopApp{{name: "Firefox", exec: "firefox"}, {name: "Top", exec: "top", terminal: true}},
-		[]string{"btop", "xeyes", "ls"}, nil))
+		nil, []string{"btop", "xeyes", "ls"}, nil))
 	windowed := func(p string) bool { return p == "xeyes" }
 
 	for line, want := range map[string]bool{

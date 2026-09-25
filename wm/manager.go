@@ -70,6 +70,9 @@ type Manager struct {
 
 	// what the event loop runs later, see after
 	later chan func()
+
+	// the frames the windows of processes fion started go to
+	placements map[int32]placement
 }
 
 func NewManager() (*Manager, error) {
@@ -168,6 +171,9 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	// in its frame, not over it
 	wm.GetActiveScreen().leaveFullscreen()
 	frame := wm.GetActiveFrame()
+	if f := wm.placedFrame(win); f != nil {
+		frame = f
+	}
 	parentId := frame.GetWindow()
 
 	// Once reparented the client is no longer a child of the root, so the

@@ -203,9 +203,9 @@ func appendHistory(path, line string) error {
 	return f.Close()
 }
 
-// launchItems merges the sources: an application or a command line run
-// before is shown once, the uses of the history added to it.
-func launchItems(apps []desktopApp, commands []string, uses map[string]int) []launchItem {
+// launchItems merges the sources: an application, a project or a command
+// line run before is shown once, the uses of the history added to it.
+func launchItems(apps []desktopApp, projects []launchItem, commands []string, uses map[string]int) []launchItem {
 	var items []launchItem
 	byCommand := map[string]int{}
 	add := func(it launchItem) {
@@ -222,6 +222,9 @@ func launchItems(apps []desktopApp, commands []string, uses map[string]int) []la
 			command = "xterm -e " + command
 		}
 		add(launchItem{label: app.name, command: command, kind: kindApp})
+	}
+	for _, p := range projects {
+		add(p)
 	}
 	for _, c := range commands {
 		add(launchItem{label: c, command: c, kind: kindCommand})

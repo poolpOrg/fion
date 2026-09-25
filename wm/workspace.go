@@ -25,6 +25,9 @@ type Workspace struct {
 
 	Root        *Frame
 	ActiveFrame *Frame
+
+	// the project it was opened for, shown in the bar, "" when none
+	name string
 }
 
 func newWorkspace(screen *Screen) (*Workspace, error) {
@@ -337,6 +340,9 @@ func (ws *Workspace) sampleBar() barState {
 	}
 	screen, workspace, count := ws.position()
 	st.position = fmt.Sprintf("[%02x:%02x/%02x]", screen, workspace, count)
+	if ws.name != "" {
+		st.position = fmt.Sprintf("[%02x:%02x/%02x %s]", screen, workspace, count, ws.name)
+	}
 	st.urgent = ws.Screen.urgentSummary()
 	st.system = thisOS().String()
 	return st
