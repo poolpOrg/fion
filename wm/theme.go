@@ -31,9 +31,18 @@ const (
 	colorAccent      = draculaPurple      // active tab, active frame, selection
 	colorAccentText  = draculaBackground  // text on colorAccent
 
+	colorAlert = 0xff5555 // Dracula's red, for values past their threshold
+
 	// empty frames are black, with the logo in its own white
 	colorEmpty = 0x000000
 	colorLogo  = 0xffffff
+)
+
+// the info bar shows in bold red a CPU or memory use from these, and a
+// load average above the number of CPUs
+const (
+	alertCPUPercent = 80
+	alertMemPercent = 90
 )
 
 // xtermResources are the Dracula colors for xterm, from Dracula's

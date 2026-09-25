@@ -3,7 +3,6 @@ package wm
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -11,6 +10,7 @@ import (
 	"github.com/jezek/xgb/xproto"
 
 	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 )
 
@@ -21,6 +21,7 @@ type Workspace struct {
 	WorkspaceWindow xproto.Window
 	InfoBarWindow   xproto.Window
 	InfoBarGC       xproto.Gcontext
+	infoBarAlertGC  xproto.Gcontext // bold red, 0 when the bold font is missing
 
 	Root        *Frame
 	ActiveFrame *Frame
@@ -110,6 +111,18 @@ func (ws *Workspace) setupInfoBar() error {
 	_ = xproto.OpenFontChecked(ws.Conn(), fid, uint16(len("fixed")), "fixed").Check()
 	xproto.ChangeGC(ws.Conn(), gc, xproto.GcFont, []uint32{uint32(fid)})
 	ws.InfoBarGC = gc
+
+	// the same font in bold, for values past their threshold
+	bold := "-misc-fixed-bold-r-semicondensed--13-120-75-75-c-60-iso8859-1"
+	bid, _ := xproto.NewFontId(ws.Conn())
+	if xproto.OpenFontChecked(ws.Conn(), bid, uint16(len(bold)), bold).Check() == nil {
+		agc, _ := xproto.NewGcontextId(ws.Conn())
+		xproto.CreateGC(ws.Conn(), agc, xproto.Drawable(ws.InfoBarWindow),
+			xproto.GcForeground|xproto.GcBackground|xproto.GcFont,
+			[]uint32{colorAlert, colorBar, uint32(bid)})
+		xproto.CloseFont(ws.Conn(), bid)
+		ws.infoBarAlertGC = agc
+	}
 
 	return nil
 }
@@ -215,35 +228,75 @@ const (
 	infoBarLogoH = 14
 )
 
+// barAlerts tells which of the CPU, memory and load values are past their
+// thresholds, to show in bold red.
+func barAlerts(cpuPercent, memPercent, load1 float64, cores int) (cpuAlert, memAlert, loadAlert bool) {
+	return cpuPercent >= alertCPUPercent,
+		memPercent >= alertMemPercent,
+		cores > 0 && load1 > float64(cores)
+}
+
+// a piece of the info bar's text
+type barText struct {
+	s     string
+	alert bool
+}
+
 func (ws *Workspace) updateInfoBar() {
 	clock := time.Now().Format(time.RFC1123)
 
-	xproto.PolyFillRectangle(ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow), ws.InfoBarGC,
-		[]xproto.Rectangle{{X: 0, Y: 0, Width: 0, Height: 20}})
-
-	// get the CPU and memory usage
-	ressources := []string{}
-	numCpus, _ := cpu.Counts(true)
-
-	cpuPercents, err := cpu.Percent(0, false)
-	if err == nil && len(cpuPercents) > 0 {
-		ressources = append(ressources, fmt.Sprintf("CPU: % 4.02f%% (%d cores)", cpuPercents[0], numCpus))
+	// CPU, memory and load, alerts when past their thresholds
+	var resources []barText
+	cores, _ := cpu.Counts(true)
+	cpuPercent, memPercent, load1 := -1.0, -1.0, -1.0
+	if p, err := cpu.Percent(0, false); err == nil && len(p) > 0 {
+		cpuPercent = p[0]
 	}
-
-	memPercents, err := mem.VirtualMemory()
+	vm, err := mem.VirtualMemory()
 	if err == nil {
-		ressources = append(ressources, fmt.Sprintf("MEM: % 4s / % 4s (%.02f%%)",
-			humanize.IBytes(memPercents.Used), humanize.IBytes(memPercents.Total),
-			memPercents.UsedPercent))
+		memPercent = vm.UsedPercent
+	}
+	avg, loadErr := load.Avg()
+	if loadErr == nil {
+		load1 = avg.Load1
+	}
+	cpuAlert, memAlert, loadAlert := barAlerts(cpuPercent, memPercent, load1, cores)
+	if cpuPercent >= 0 {
+		resources = append(resources,
+			barText{s: fmt.Sprintf("CPU: % 4.02f%%", cpuPercent), alert: cpuAlert},
+			barText{s: fmt.Sprintf(" (%d cores) | ", cores)})
+	}
+	if memPercent >= 0 {
+		resources = append(resources, barText{s: fmt.Sprintf("MEM: % 4s / % 4s (%.02f%%)",
+			humanize.IBytes(vm.Used), humanize.IBytes(vm.Total), vm.UsedPercent), alert: memAlert},
+			barText{s: " | "})
+	}
+	if loadErr == nil {
+		resources = append(resources, barText{s: fmt.Sprintf("LOAD: %.2f %.2f %.2f", avg.Load1, avg.Load5, avg.Load15),
+			alert: loadAlert})
 	}
 
 	conn, bar := ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow)
 	xproto.ClearArea(conn, false, ws.InfoBarWindow, 0, 0, 0, 0)
-	text := func(x int, s string) int {
+	text := func(x int, t barText) int {
+		s := t.s
 		if len(s) > 255 {
 			s = s[:255]
 		}
-		xproto.ImageText8(conn, byte(len(s)), bar, ws.InfoBarGC, int16(x), 14, s)
+		gc := ws.InfoBarGC
+		if t.alert {
+			if ws.infoBarAlertGC != 0 {
+				gc = ws.infoBarAlertGC
+			} else {
+				// no bold font: red, drawn twice for weight
+				xproto.ChangeGC(conn, ws.InfoBarGC, xproto.GcForeground, []uint32{colorAlert})
+				xproto.PolyText8(conn, bar, gc, int16(x+1), 14, append([]byte{byte(len(s)), 0}, s...))
+			}
+		}
+		xproto.ImageText8(conn, byte(len(s)), bar, gc, int16(x), 14, s)
+		if t.alert && ws.infoBarAlertGC == 0 {
+			xproto.ChangeGC(conn, ws.InfoBarGC, xproto.GcForeground, []uint32{colorText})
+		}
 		return x + len(s)*fixedCharWidth
 	}
 	image := func(x int, img logoImage) int {
@@ -259,16 +312,19 @@ func (ws *Workspace) updateInfoBar() {
 			x = image(x, img) + fixedCharWidth
 		}
 	} else {
-		x = text(x, "FION ")
+		x = text(x, barText{s: "FION "})
 	}
 	screen, workspace, count := ws.position()
-	x = text(x, fmt.Sprintf("[%02x:%02x/%02x] | ", screen, workspace, count))
+	x = text(x, barText{s: fmt.Sprintf("[%02x:%02x/%02x] | ", screen, workspace, count)})
 	system := thisOS()
 	if img, ok := ws.Screen.iconPixmap(system.kind, colorBar); ok {
 		x = image(x, img) + 4
 	}
-	text(x, system.String()+" | "+strings.Join(ressources, " | "))
-	text(int(ws.Screen.Geometry().W)-190, clock)
+	x = text(x, barText{s: system.String() + " | "})
+	for _, t := range resources {
+		x = text(x, t)
+	}
+	text(int(ws.Screen.Geometry().W)-190, barText{s: clock})
 }
 
 func (ws *Workspace) updateTitleBars() {

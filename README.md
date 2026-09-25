@@ -27,7 +27,9 @@ windows, `Super+F2` for a terminal, or drag tabs onto it.
 
 A bar at the bottom of each workspace shows the fion logo, the screen and
 workspace numbers, the operating system with a small icon of its own, as
-`OpenBSD/7.9 (arm64)`, CPU and memory usage and the time.
+`OpenBSD/7.9 (arm64)`, CPU and memory usage, the load average and the
+time.  The CPU use shows in bold red from 80%, the memory's from 90%, and
+the load average above the number of CPUs.
 
 Empty frames are black; a workspace that is a single empty frame shows the
 fion logo, centered.

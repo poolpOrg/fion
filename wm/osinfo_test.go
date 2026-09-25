@@ -86,3 +86,21 @@ func TestInfoBarLogo(t *testing.T) {
 		t.Fatalf("%d bright pixels where the bar's logo should be", bright)
 	}
 }
+
+func TestBarAlerts(t *testing.T) {
+	for _, tc := range []struct {
+		cpu, mem, load float64
+		cores          int
+		want           [3]bool
+	}{
+		{10, 50, 1, 4, [3]bool{false, false, false}},
+		{80, 90, 4, 4, [3]bool{true, true, false}},
+		{79.9, 89.9, 4.01, 4, [3]bool{false, false, true}},
+		{-1, -1, -1, 0, [3]bool{false, false, false}}, // unknown
+	} {
+		c, m, l := barAlerts(tc.cpu, tc.mem, tc.load, tc.cores)
+		if got := [3]bool{c, m, l}; got != tc.want {
+			t.Errorf("barAlerts(%v, %v, %v, %d) = %v, want %v", tc.cpu, tc.mem, tc.load, tc.cores, got, tc.want)
+		}
+	}
+}
