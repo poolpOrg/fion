@@ -175,8 +175,11 @@ stacked on the bar of the monitor with the focus, with `fion msg`:
 sets how long it stays, unless `-t` gives seconds; without text, each
 line read is a message.  A click on the line, or `Super+n`, dismisses
 them, and the panel's Messages view keeps the last ones.  `fion ctl`
-drives fion the same way: `fion ctl workspace next`, `prev`, `new` or a
-number, `fion ctl project DIR`, `fion ctl clear`.  Both talk to the fion
+drives fion the same way: `fion ctl do` runs any of its actions, which
+`fion ctl actions` lists, what the bindings do and a little more, as
+`fion ctl do grow left 200`, `fion ctl do move-tab right` or `fion ctl do
+panel ports`; `fion ctl workspace next`, `prev`, `new` or a number,
+`fion ctl project NAME`, `fion ctl clear` are short for some.  Both talk to the fion
 of `$DISPLAY` over a socket of the user's, in `$XDG_RUNTIME_DIR`, or
 fion's state directory.
 

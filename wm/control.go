@@ -95,38 +95,23 @@ func (wm *Manager) handleRequest(req request) error {
 			return err
 		}
 		wm.notify(lvl, req.Text, time.Duration(req.Timeout*float64(time.Second)))
-	case "clear":
-		wm.clearNotifications()
-	case "workspace":
-		if len(req.Args) != 1 {
-			return errors.New("workspace takes next, prev, new or a number")
+	case "do":
+		if len(req.Args) == 0 {
+			return errors.New("do takes an action: fion ctl actions lists them")
 		}
-		switch a := req.Args[0]; a {
-		case "next":
-			wm.switchWorkspace(1)
-		case "prev":
-			wm.switchWorkspace(-1)
-		case "new":
-			return wm.createWorkspace()
-		default:
-			n, err := strconv.Atoi(a)
-			s := wm.GetActiveScreen()
-			if err != nil || n < 1 || n > len(s.Workspaces) {
-				return fmt.Errorf("no workspace %q", a)
-			}
-			s.showWorkspace(s.Workspaces[n-1])
-		}
-		wm.GetActiveScreen().updateTitleBars()
-		wm.updateFocus()
-	case "project":
-		if len(req.Args) != 1 {
-			return errors.New("project takes a directory")
-		}
-		dir, err := filepath.Abs(req.Args[0])
+		a, args, err := parseAction(strings.Join(req.Args, " "))
 		if err != nil {
 			return err
 		}
-		return wm.openProject(dir)
+		return wm.runAction(a, args)
+	case "clear", "workspace", "project":
+		// the first commands, as actions
+		name := map[string]string{"clear": "clear-messages"}[req.Cmd]
+		if name == "" {
+			name = req.Cmd
+		}
+		a, _ := findAction(name)
+		return wm.runAction(a, req.Args)
 	default:
 		return fmt.Errorf("unknown command %q", req.Cmd)
 	}
@@ -138,6 +123,10 @@ func (wm *Manager) handleRequest(req request) error {
 func Control(args []string, stdin io.Reader, stdout io.Writer) (bool, error) {
 	if len(args) == 0 || (args[0] != "msg" && args[0] != "ctl") {
 		return false, nil
+	}
+	if len(args) == 2 && args[0] == "ctl" && args[1] == "actions" {
+		_, err := io.WriteString(stdout, actionList())
+		return true, err
 	}
 	reqs, err := controlRequests(args, stdin)
 	if err != nil {
@@ -165,8 +154,10 @@ func Control(args []string, stdin io.Reader, stdout io.Writer) (bool, error) {
 }
 
 const controlUsage = `usage: fion msg [-l info|ok|warn|error] [-t seconds] [text ...]
+       fion ctl do ACTION [ARGS ...]
+       fion ctl actions
        fion ctl workspace next|prev|new|N
-       fion ctl project DIR
+       fion ctl project NAME|DIR
        fion ctl clear
 fion msg without text posts each line read from the standard input`
 
