@@ -116,3 +116,15 @@ func TestNotificationLine(t *testing.T) {
 		t.Fatalf("the notification line shows empty")
 	}
 }
+
+func TestSocketPathFits(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/"+strings.Repeat("long/", 30))
+	p := socketPath(":0")
+	if len(p) >= maxSocketPath || !strings.HasPrefix(p, "/tmp/fion-") {
+		t.Fatalf("socket path %q", p)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	if p := socketPath(":0"); p != "/run/user/1000/fion-_0.sock" {
+		t.Fatalf("socket path %q", p)
+	}
+}

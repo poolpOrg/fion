@@ -371,7 +371,7 @@ func (ws *Workspace) updateInfoBar() {
 	var clock string
 	for form := range barForms {
 		before, after, clock = barPieces(st, form)
-		if 4+textWidth(before)+iconW+textWidth(after)+(len(clock)+3)*barFont.charW <= width {
+		if 4+textWidth(before)+iconW+textWidth(after)+(len(clock)+3)*barFont.charW+powerButtonW() <= width {
 			break
 		}
 	}
@@ -412,7 +412,9 @@ func (ws *Workspace) updateInfoBar() {
 	for _, t := range after {
 		x = text(x, t)
 	}
-	text(width-(len(clock)+1)*barFont.charW, barText{s: clock})
+	px := powerButtonX(width)
+	text(px-(len(clock)+1)*barFont.charW, barText{s: clock})
+	ws.drawPowerButton(px)
 }
 
 func (ws *Workspace) updateTitleBars() {
@@ -423,4 +425,31 @@ func (ws *Workspace) updateTitleBars() {
 
 func (ws *Workspace) GetActiveFrame() *Frame {
 	return ws.ActiveFrame
+}
+
+// The button at the end of the bar, a power symbol, opens the session
+// menu: restart, log out, quit.
+
+func powerButtonW() int { return infoBarInnerH() + 6 }
+
+// powerButtonX is where the button starts, in a bar of a monitor width
+// pixels wide.
+func powerButtonX(width int) int { return width - 2 - powerButtonW() }
+
+// onPowerButton reports whether x, in a bar, is on the button.
+func onPowerButton(x, width int) bool { return x >= powerButtonX(width) }
+
+func (ws *Workspace) drawPowerButton(x int) {
+	conn, bar := ws.Manager.Conn(), xproto.Drawable(ws.InfoBarWindow)
+	h := infoBarInnerH()
+	d := h - 8 // the circle's diameter
+	cx, cy := x+powerButtonW()/2, h/2
+	gc := ws.InfoBarGC
+	lw := max(1, d/8)
+	xproto.ChangeGC(conn, gc, xproto.GcForeground|xproto.GcLineWidth, []uint32{colorText, uint32(lw)})
+	// the circle, open at the top, and the stroke through the opening
+	xproto.PolyArc(conn, bar, gc, []xproto.Arc{{X: int16(cx - d/2), Y: int16(cy - d/2), Width: uint16(d), Height: uint16(d),
+		Angle1: 120 * 64, Angle2: 300 * 64}})
+	xproto.PolySegment(conn, bar, gc, []xproto.Segment{{X1: int16(cx), Y1: int16(cy - d/2 - 1), X2: int16(cx), Y2: int16(cy)}})
+	xproto.ChangeGC(conn, gc, xproto.GcLineWidth, []uint32{0})
 }

@@ -269,6 +269,9 @@ var actions = []action{
 		}
 		return nil
 	}},
+	{"restart", "", "restart fion, keeping the layout", noArgs(func(wm *Manager) error { wm.restart(); return nil })},
+	{"logout", "", "close the windows, then quit, ending the session", noArgs(func(wm *Manager) error { wm.logout(); return nil })},
+	{"quit", "", "quit fion, leaving the windows", noArgs(func(wm *Manager) error { wm.exiting = exitQuit; return nil })},
 	{"clear-messages", "", "dismiss the messages", noArgs(func(wm *Manager) error { wm.clearNotifications(); return nil })},
 	{"cheat-sheet", "", "show the key bindings", noArgs(func(wm *Manager) error { return wm.showCheatSheet() })},
 }

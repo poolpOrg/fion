@@ -118,7 +118,10 @@ func (wm *Manager) handleBinding(sym xproto.Keysym, shift, ctrl bool) bool {
 		sym = alias
 	}
 	if sym == XK_Escape && !shift && !ctrl {
-		return true
+		if err := wm.sessionMenu(); err != nil {
+			log.Printf("session: %v", err)
+		}
+		return false
 	}
 	// wherever the layout puts it, with Shift or not
 	if sym == XK_question && !ctrl {

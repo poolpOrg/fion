@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"os"
 	"slices"
+	"time"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -119,8 +121,20 @@ func (wm *Manager) initRoot(screenInfo xproto.ScreenInfo) ([]xproto.Window, atom
 			xproto.EventMaskPointerMotion |
 			xproto.EventMaskKeyPress,
 	)
-	if err := xproto.ChangeWindowAttributesChecked(wm.Conn(), screenInfo.Root, xproto.CwEventMask, []uint32{mask}).Check(); err != nil {
-		return nil, s.atoms, fmt.Errorf("another WM running: %w", err)
+	// restarting, the fion before may not be gone yet
+	tries := 1
+	if os.Getenv("FION_RESTORE") != "" {
+		tries = 30
+	}
+	for i := 0; ; i++ {
+		err := xproto.ChangeWindowAttributesChecked(wm.Conn(), screenInfo.Root, xproto.CwEventMask, []uint32{mask}).Check()
+		if err == nil {
+			break
+		}
+		if i+1 >= tries {
+			return nil, s.atoms, fmt.Errorf("another WM running: %w", err)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// before creating any window of our own
@@ -268,4 +282,12 @@ func (s *Screen) layoutWorkspaces() {
 		// the logo, centered again
 		xproto.ClearArea(s.Conn(), true, ws.Root.window, 0, 0, 0, 0)
 	}
+}
+
+// panelWindow is the panel's window, 0 before it is first shown.
+func (s *Screen) panelWindow() xproto.Window {
+	if s.panel == nil {
+		return 0
+	}
+	return s.panel.window
 }
