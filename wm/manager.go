@@ -831,19 +831,18 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		wm.modeKey(ev)
 		return false
 	}
-	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
-		wm.panelKey(ev)
-		return false
-	}
-
 	km := wm.KeyboardManager
 	mods := ev.State &^ (xproto.ModMaskLock | km.Num)
 	sym := km.eventKeysym(ev.Detail, ev.State)
-	// Print, alone
+	// Print, alone, the panel shown or not
 	if sym == XK_Print && mods == 0 {
 		if err := wm.printScreen(); err != nil {
 			log.Printf("capture: %v", err)
 		}
+		return false
+	}
+	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
+		wm.panelKey(ev)
 		return false
 	}
 	base, ctrl := mods&^xproto.ModMaskShift, false

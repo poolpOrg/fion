@@ -200,3 +200,47 @@ func TestGIFConversion(t *testing.T) {
 		t.Fatalf("the video wasn't removed")
 	}
 }
+
+func TestScreenshotWithPanel(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_PICTURES_DIR", dir)
+	wm := newTestManager(t)
+	s := wm.GetActiveScreen()
+	if err := s.togglePanel(); err != nil {
+		t.Fatal(err)
+	}
+	drainEvents(t, wm)
+
+	// Print reaches fion with the panel shown, which offers it
+	press(t, wm, XK_Print, 0)
+	if wm.mode == nil {
+		t.Fatalf("Print did nothing with the panel shown")
+	}
+	press(t, wm, XK_s, 0)
+	if p := s.prompt; p == nil || !strings.Contains(p.text, "p the panel") {
+		t.Fatalf("the panel isn't offered")
+	}
+	press(t, wm, XK_p, 0)
+	pngs := capturedPNGs(t, dir)
+	if len(pngs) != 1 {
+		t.Fatalf("%d screenshots saved", len(pngs))
+	}
+	f, err := os.Open(pngs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := img.Bounds(); b.Dx() != int(s.Geometry().W) || b.Dy() != s.panel.h {
+		t.Fatalf("screenshot %v, not the panel's %dx%d", b, s.Geometry().W, s.panel.h)
+	}
+
+	// and the panel keeps the keyboard
+	press(t, wm, xproto.Keysym('2'), 0)
+	if !s.panel.shown || panelViews[s.panel.view] != "CPU" {
+		t.Fatalf("the panel lost its keys after the capture")
+	}
+}

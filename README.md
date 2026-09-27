@@ -125,7 +125,7 @@ in a cheat sheet:
 | `Super+n`                       | dismiss the messages                     |
 | `Super+?`                       | this list                                |
 | `Super+Escape`                  | `r` restart fion, keeping the layout, `l` log out, `q` quit, as the button at the end of the bar offers |
-| `Print`                         | capture: `s` a screenshot, `v` a video or `g` a GIF, then `t` the tab, `f` the frame or `w` the workspace; `Print` again stops a video |
+| `Print`                         | capture: `s` a screenshot, `v` a video or `g` a GIF, then `t` the tab, `f` the frame, `p` the panel when shown, or `w` the workspace; `Print` again stops a video |
 
 Screenshots are saved as PNG, and videos, recorded with ffmpeg, as MP4 or
 GIF, in `$XDG_PICTURES_DIR`, or `~/Pictures`, or the home directory.  The bar

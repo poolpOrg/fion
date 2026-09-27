@@ -90,6 +90,16 @@ func (wm *Manager) captureTargets() (tab rect, hasTab bool, frame, workspace rec
 	return tab, hasTab, frame, workspace
 }
 
+// panelTarget is the panel of the monitor with the focus, when shown.
+func (wm *Manager) panelTarget() (rect, bool) {
+	s := wm.GetActiveScreen()
+	if s.panel == nil || !s.panel.shown {
+		return rect{}, false
+	}
+	g := s.Geometry()
+	return rect{int(g.X), int(g.Y) + int(g.H) - infoBarOuterH() - s.panel.h, int(g.W), s.panel.h}, true
+}
+
 // picturesDir is where captures are saved.
 func picturesDir() string {
 	if dir := os.Getenv("XDG_PICTURES_DIR"); dir != "" {
@@ -319,10 +329,14 @@ func (wm *Manager) printScreen() error {
 		} else if video {
 			what = "Video"
 		}
+		choices := "f the frame, "
 		if _, hasTab, _, _ := wm.captureTargets(); hasTab {
-			return what + " of: t the tab, f the frame, w the workspace, any other key cancels"
+			choices = "t the tab, " + choices
 		}
-		return what + " of: f the frame, w the workspace, any other key cancels"
+		if _, ok := wm.panelTarget(); ok {
+			choices += "p the panel, "
+		}
+		return what + " of: " + choices + "w the workspace, any other key cancels"
 	}
 	p, err := wm.showPrompt(menu, colorAccent)
 	if err != nil {
@@ -352,6 +366,12 @@ func (wm *Manager) printScreen() error {
 			r = frame
 		case sym == XK_w:
 			r = workspace
+		case sym == XK_p:
+			pr, ok := wm.panelTarget()
+			if !ok {
+				return true
+			}
+			r = pr
 		default:
 			return true
 		}

@@ -249,9 +249,9 @@ var actions = []action{
 		}
 		return wm.openProject(dir)
 	}},
-	{"screenshot", "tab|frame|workspace", "save a screenshot", func(wm *Manager, args []string) error {
+	{"screenshot", "tab|frame|panel|workspace", "save a screenshot", func(wm *Manager, args []string) error {
 		if len(args) != 1 {
-			return errors.New("takes tab, frame or workspace")
+			return errors.New("takes tab, frame, panel or workspace")
 		}
 		tab, hasTab, frame, workspace := wm.captureTargets()
 		switch args[0] {
@@ -264,8 +264,14 @@ var actions = []action{
 			wm.capture(frame, false, false)
 		case "workspace", "screen":
 			wm.capture(workspace, false, false)
+		case "panel":
+			r, ok := wm.panelTarget()
+			if !ok {
+				return errors.New("the panel isn't shown")
+			}
+			wm.capture(r, false, false)
 		default:
-			return fmt.Errorf("%q: tab, frame or workspace", args[0])
+			return fmt.Errorf("%q: tab, frame, panel or workspace", args[0])
 		}
 		return nil
 	}},
