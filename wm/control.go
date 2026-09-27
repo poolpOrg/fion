@@ -38,10 +38,13 @@ func socketPath(display string) string {
 		path = filepath.Join(dir, name)
 	}
 	if len(path) >= maxSocketPath {
-		path = filepath.Join("/tmp", fmt.Sprintf("fion-%d", os.Getuid()), name)
+		path = filepath.Join(tmpSocketDir(), name)
 	}
 	return path
 }
+
+// tmpSocketDir is where the socket goes when its path would be too long.
+func tmpSocketDir() string { return filepath.Join("/tmp", fmt.Sprintf("fion-%d", os.Getuid())) }
 
 // the longest path a socket takes on the systems fion runs on, macOS's
 // and the BSDs' being the shortest
@@ -65,7 +68,13 @@ func privateDir(dir string) error {
 // listenControl opens the socket, replacing a stale one, and serves it,
 // handing each request to the event loop.
 func (wm *Manager) listenControl(path string) (net.Listener, error) {
-	if err := privateDir(filepath.Dir(path)); err != nil {
+	// the directory in /tmp must be the user's alone, as anyone could
+	// have made it; the others are the user's already
+	mkdir := func(dir string) error { return os.MkdirAll(dir, 0o700) }
+	if filepath.Dir(path) == tmpSocketDir() {
+		mkdir = privateDir
+	}
+	if err := mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	// another fion may be using it

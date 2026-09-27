@@ -2,6 +2,7 @@ package wm
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,16 @@ func TestSocketPathFits(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
 	if p := socketPath(":0"); p != "/run/user/1000/fion-_0.sock" {
 		t.Fatalf("socket path %q", p)
+	}
+}
+
+func TestPrivateDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fion")
+	if err := privateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(dir, 0o755)
+	if err := privateDir(dir); err == nil {
+		t.Fatalf("a directory others can read passed")
 	}
 }
