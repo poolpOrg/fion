@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -28,19 +29,52 @@ type request struct {
 	Args    []string `json:"args,omitempty"`
 }
 
-// socketPath is where the fion of display listens.
+// socketPath is where the fion of display listens: in /tmp when the path
+// would be too long for a socket, about a hundred bytes.
 func socketPath(display string) string {
 	name := "fion-" + strings.NewReplacer("/", "_", ":", "_").Replace(display) + ".sock"
+	path := filepath.Join(stateDir(), name)
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return filepath.Join(dir, name)
+		path = filepath.Join(dir, name)
 	}
-	return filepath.Join(stateDir(), name)
+	if len(path) >= maxSocketPath {
+		path = filepath.Join(tmpSocketDir(), name)
+	}
+	return path
+}
+
+// tmpSocketDir is where the socket goes when its path would be too long.
+func tmpSocketDir() string { return filepath.Join("/tmp", fmt.Sprintf("fion-%d", os.Getuid())) }
+
+// the longest path a socket takes on the systems fion runs on, macOS's
+// and the BSDs' being the shortest
+const maxSocketPath = 100
+
+// privateDir makes dir, the user's alone, and checks it is.
+func privateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); !info.IsDir() || (ok && int(st.Uid) != os.Getuid()) || info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%s isn't a directory of the user's alone", dir)
+	}
+	return nil
 }
 
 // listenControl opens the socket, replacing a stale one, and serves it,
 // handing each request to the event loop.
 func (wm *Manager) listenControl(path string) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	// the directory in /tmp must be the user's alone, as anyone could
+	// have made it; the others are the user's already
+	mkdir := func(dir string) error { return os.MkdirAll(dir, 0o700) }
+	if filepath.Dir(path) == tmpSocketDir() {
+		mkdir = privateDir
+	}
+	if err := mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	// another fion may be using it

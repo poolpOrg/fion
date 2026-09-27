@@ -76,6 +76,18 @@ type Manager struct {
 
 	// the notification line, created with the first message
 	notes *noteLine
+
+	// quitting or restarting, the layout written for the next fion, and
+	// until when logging out waits for the windows to close
+	exiting     exitKind
+	restartPath string
+	logoutUntil time.Time
+
+	// restarting: the layout written, and the frames the windows adopted
+	// go back to
+	pendingLayout *savedLayout
+	restored      map[xproto.Window]*Frame
+	restoring     []restoring
 }
 
 func NewManager() (*Manager, error) {
@@ -111,7 +123,16 @@ func NewManager() (*Manager, error) {
 		return nil, err
 	}
 	wm.installXtermTheme()
+	if path := os.Getenv("FION_RESTORE"); path != "" {
+		os.Unsetenv("FION_RESTORE")
+		if l, err := loadLayout(path); err != nil {
+			log.Printf("restoring the layout: %v", err)
+		} else {
+			wm.prepareLayout(l)
+		}
+	}
 	wm.adoptExisting()
+	wm.finishLayout()
 
 	return wm, nil
 }
@@ -175,6 +196,8 @@ func (wm *Manager) manageWindow(win xproto.Window, mapped bool) {
 	wm.GetActiveScreen().leaveFullscreen()
 	frame := wm.GetActiveFrame()
 	if f := wm.placedFrame(win); f != nil {
+		frame = f
+	} else if f, ok := wm.restored[win]; ok {
 		frame = f
 	}
 	parentId := frame.GetWindow()
@@ -348,6 +371,7 @@ func (wm *Manager) Conn() *xgb.Conn {
 func (wm *Manager) Close() {
 	if wm.xConn != nil {
 		wm.xConn.Close()
+		wm.xConn = nil
 	}
 }
 
@@ -516,7 +540,7 @@ func (wm *Manager) Run() error {
 		}
 	}()
 
-	log.Printf("fion running on %q — %s+Escape quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
+	log.Printf("fion running on %q — %s+Escape restarts, logs out or quits", os.Getenv("DISPLAY"), wm.KeyboardManager.ModName)
 	if l, err := wm.listenControl(socketPath(os.Getenv("DISPLAY"))); err != nil {
 		log.Printf("control socket: %v; fion msg won't reach this fion", err)
 	} else {
@@ -531,6 +555,7 @@ func (wm *Manager) Run() error {
 
 		case <-ticker.C:
 			wm.expireNotifications()
+			wm.checkLogout()
 			if err := wm.recordingFailed(); err != nil {
 				wm.alert("Recording stopped: " + err.Error())
 			}
@@ -566,6 +591,13 @@ func (wm *Manager) Run() error {
 			if quit := wm.handleEvent(ev.event); quit {
 				return nil
 			}
+		}
+		switch wm.exiting {
+		case exitQuit:
+			return nil
+		case exitRestart:
+			log.Printf("restarting")
+			return &Restart{Path: wm.restartPath}
 		}
 	}
 }
@@ -659,6 +691,12 @@ func (wm *Manager) handleEvent(e xgb.Event) bool {
 		} else if s := wm.infoBarScreen(ev.Event); s != nil && s.panel != nil && s.panel.shown && ev.Event == s.panel.window &&
 			s.panel.panelClick(int(ev.EventX), int(ev.EventY)) {
 			// a view's name
+		} else if s := wm.infoBarScreen(ev.Event); s != nil && ev.Detail == 1 && ev.Event != s.panelWindow() &&
+			onPowerButton(int(ev.EventX), int(s.Geometry().W)) {
+			wm.setActiveScreen(s)
+			if err := wm.sessionMenu(); err != nil {
+				log.Printf("session: %v", err)
+			}
 		} else if s := wm.infoBarScreen(ev.Event); s != nil && ev.Detail == 1 {
 			wm.setActiveScreen(s)
 			if err := s.togglePanel(); err != nil {
@@ -793,19 +831,18 @@ func (wm *Manager) handleKeyPress(ev xproto.KeyPressEvent) bool {
 		wm.modeKey(ev)
 		return false
 	}
-	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
-		wm.panelKey(ev)
-		return false
-	}
-
 	km := wm.KeyboardManager
 	mods := ev.State &^ (xproto.ModMaskLock | km.Num)
 	sym := km.eventKeysym(ev.Detail, ev.State)
-	// Print, alone
+	// Print, alone, the panel shown or not
 	if sym == XK_Print && mods == 0 {
 		if err := wm.printScreen(); err != nil {
 			log.Printf("capture: %v", err)
 		}
+		return false
+	}
+	if p := wm.GetActiveScreen().panel; p != nil && p.shown {
+		wm.panelKey(ev)
 		return false
 	}
 	base, ctrl := mods&^xproto.ModMaskShift, false

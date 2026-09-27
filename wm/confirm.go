@@ -129,6 +129,12 @@ func (wm *Manager) hidePrompt() {
 		p.shown = false
 		xproto.UnmapWindow(wm.Conn(), p.window)
 	}
+	// back to the panel, when it is shown, which takes its keys
+	if s := wm.GetActiveScreen(); s.panel != nil && s.panel.shown {
+		if err := wm.KeyboardManager.GrabKeyboard(s.Info().Root); err == nil {
+			return
+		}
+	}
 	wm.KeyboardManager.UngrabKeyboard()
 }
 
